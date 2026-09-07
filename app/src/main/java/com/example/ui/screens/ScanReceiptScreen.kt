@@ -73,6 +73,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -666,7 +667,7 @@ fun ScanReceiptScreen(
 
                     is ScanUiState.Success -> {
                         val res = scanState.result
-                        remember(res) {
+                        LaunchedEffect(res) {
                             editableStoreName = res.storeName
                             editableAmount = if (res.totalAmount > 0) String.format(Locale.forLanguageTag("pt-BR"), "%.2f", res.totalAmount) else ""
                             editableCategory = res.category.ifBlank { "Alimentação" }
@@ -676,7 +677,6 @@ fun ScanReceiptScreen(
                             }
                             editableItems.clear()
                             editableItems.addAll(res.items)
-                            true
                         }
 
                         // FORMULÁRIO DE REVISÃO E CONFIRMAÇÃO EM MOEDA BRASILEIRA (R$)

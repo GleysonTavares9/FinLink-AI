@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.util.Base64
 import com.example.BuildConfig
 import com.example.data.gemini.ScannedReceiptResult
+import com.example.data.ocr.ReceiptOcrEngine
+import com.example.util.parseBrDouble
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -16,16 +18,18 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
 
 /**
  * Implementação do AiProvider utilizando a API Google Gemini (modelo gemini-3.6-flash)
- * com fallback inteligente para análise local caso a chave não esteja configurada ou não haja conexão.
+ * combinada com o motor de OCR On-Device ML Kit para máxima precisão na leitura de cupons fiscais brasileiros.
  */
 class GeminiProvider(
-    private val modelName: String = "gemini-3.6-flash"
+    private val modelName: String = "gemini-3.6-flash",
+    private val ocrEngine: ReceiptOcrEngine = ReceiptOcrEngine()
 ) : AiProvider {
 
-    override val providerName: String = "Google Gemini ($modelName)"
+    override val providerName: String = "Google Gemini ($modelName) + ML Kit OCR"
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -33,26 +37,37 @@ class GeminiProvider(
         .build()
 
     override suspend fun analyzeReceipt(bitmap: Bitmap): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
+        // 1. Extração local prévia com ML Kit On-Device (rápido, sem rede e confiável)
+        val localOcrResult = ocrEngine.analyzeReceipt(bitmap)
+
         val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
 
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
-            return@withContext Result.success(analyzeReceiptLocally(bitmap))
+            return@withContext Result.success(localOcrResult)
         }
 
-        val base64Image = bitmap.toBase64()
+        // Redimensiona o bitmap para no máximo 1280px para envio leve e ultra-rápido à IA
+        val scaledBitmap = bitmap.scalePreservingAspect(1280)
+        val base64Image = scaledBitmap.toBase64()
+
         val promptText = """
-            Você é um leitor especialista de cupons fiscais brasileiros (NFC-e / SAT / Danfe / Recibos).
-            Examine detalhadamente a imagem do cupom e extraia rigorosamente as informações no seguinte formato JSON estrito:
+            Você é um especialista em auditoria e leitura de cupons fiscais brasileiros (NFC-e / SAT / Danfe / Recibos).
+            Examine detalhadamente a imagem do cupom e o texto pré-lido via OCR:
+            ${localOcrResult.rawText.take(4000)}
+
+            Extraia rigorosamente as informações no formato JSON estrito:
             {
               "storeName": "Nome Fantasia ou Razão Social do Estabelecimento",
               "totalAmount": 123.45,
               "transactionDate": "YYYY-MM-DD",
               "category": "Alimentação, Transporte, Lazer, Saúde, Moradia, Mercado, ou Outros",
-              "paymentMethod": "PIX, Cartão de Crédito, Cartão de Débito, Dinheiro, ou Boleto",
+              "paymentMethod": "PIX, Cartão de Crédito, Cartão de Débito, Dinheiro, ou NFC-e",
               "items": ["1x Item Descrição - R$ 10.00", "2x Item Descrição - R$ 15.00"],
               "confidence": "ALTA"
             }
-            Atenção: retorne estritamente o JSON sem blocos de código ou markdown adicionais.
+            Atenção crítica:
+            1. O campo "totalAmount" DEVE conter o valor total final pago em reais como número decimal (ex: 45.90 ou 152.00). Não retorne 0.0 se houver valor na nota.
+            2. Retorne estritamente o JSON sem blocos de texto ou markdown extras.
         """.trimIndent()
 
         val jsonPayload = """
@@ -87,14 +102,14 @@ class GeminiProvider(
             val responseBody = response.body?.string() ?: ""
 
             if (!response.isSuccessful) {
-                return@withContext Result.success(analyzeReceiptLocally(bitmap))
+                return@withContext Result.success(localOcrResult)
             }
 
             val extractedJsonText = extractTextFromGeminiResponse(responseBody)
-            val parsedResult = parseReceiptJson(extractedJsonText)
+            val parsedResult = parseReceiptJson(extractedJsonText, localOcrResult)
             Result.success(parsedResult)
         } catch (e: Exception) {
-            Result.success(analyzeReceiptLocally(bitmap))
+            Result.success(localOcrResult)
         }
     }
 
@@ -105,20 +120,21 @@ class GeminiProvider(
         }
 
         val promptText = """
-            Você é um leitor especialista de cupons fiscais brasileiros (NFC-e / SAT / Danfe / SEFAZ).
+            Você é um especialista em leitura de dados de NFC-e e cupons fiscais brasileiros (SEFAZ / SAT / Danfe).
             Examine detalhadamente os dados fiscais e o conteúdo HTML/URL abaixo e extraia com precisão absoluta as informações no seguinte formato JSON estrito:
             {
               "storeName": "Nome Fantasia ou Razão Social do Estabelecimento",
               "totalAmount": 123.45,
               "transactionDate": "YYYY-MM-DD",
-              "category": "Mercado, Alimentação, Transporte, Saúde, Moradia, ou Outros",
+              "category": "Mercado, Alimentação, Transporte, Saúde, Moradia, Lazer, ou Outros",
               "paymentMethod": "PIX, Cartão de Crédito, Cartão de Débito, Dinheiro, ou NFC-e",
               "items": ["1x Item Descrição - R$ 10.00", "2x Item Descrição - R$ 15.00"],
               "confidence": "ALTA (SEFAZ Oficial)"
             }
-            Atenção: retorne estritamente o JSON sem blocos de markdown adicionais.
+            Atenção crítica: o campo totalAmount DEVE ser o valor total da nota em número decimal com ponto (ex: 89.50).
+            Retorne estritamente o JSON.
 
-            Conteúdo do Cupom/NFC-e:
+            Conteúdo da Nota/Cupom:
             ${text.take(12000)}
         """.trimIndent()
 
@@ -151,7 +167,7 @@ class GeminiProvider(
             }
 
             val extractedJsonText = extractTextFromGeminiResponse(responseBody)
-            val parsedResult = parseReceiptJson(extractedJsonText)
+            val parsedResult = parseReceiptJson(extractedJsonText, null)
             Result.success(parsedResult)
         } catch (e: Exception) {
             Result.failure(e)
@@ -237,30 +253,58 @@ class GeminiProvider(
             val firstCandidate = candidates?.optJSONObject(0)
             val content = firstCandidate?.optJSONObject("content")
             val parts = content?.optJSONArray("parts")
-            val firstPart = parts?.optJSONObject(0)
-            firstPart?.optString("text") ?: responseBody
+            if (parts != null && parts.length() > 0) {
+                val sb = StringBuilder()
+                for (i in 0 until parts.length()) {
+                    val p = parts.optJSONObject(i)
+                    val t = p?.optString("text")
+                    if (!t.isNullOrBlank()) {
+                        sb.append(t)
+                    }
+                }
+                if (sb.isNotEmpty()) return sb.toString()
+            }
+            responseBody
         } catch (e: Exception) {
             responseBody
         }
     }
 
-    private fun parseReceiptJson(jsonText: String): ScannedReceiptResult {
+    private fun parseReceiptJson(
+        jsonText: String,
+        fallbackResult: ScannedReceiptResult?
+    ): ScannedReceiptResult {
         return try {
-            val cleanJson = jsonText.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            val cleanJson = extractJsonSubstring(jsonText)
             val obj = JSONObject(cleanJson)
 
-            val storeName = obj.optString("storeName", "Estabelecimento Comercial")
-            val totalAmount = obj.optDouble("totalAmount", 0.0)
-            val transactionDate = obj.optString("transactionDate", currentDateString())
-            val category = obj.optString("category", "Alimentação")
-            val paymentMethod = obj.optString("paymentMethod", "Cartão de Crédito")
+            val storeName = obj.optString("storeName", "").ifBlank {
+                fallbackResult?.storeName ?: "Estabelecimento Comercial"
+            }
+
+            var totalAmount = extractTotalAmount(obj, cleanJson)
+            if (totalAmount <= 0.0 && fallbackResult != null && fallbackResult.totalAmount > 0.0) {
+                totalAmount = fallbackResult.totalAmount
+            }
+
+            val transactionDate = obj.optString("transactionDate", "").ifBlank {
+                fallbackResult?.transactionDate ?: currentDateString()
+            }
+            val category = obj.optString("category", "").ifBlank {
+                fallbackResult?.category ?: "Alimentação"
+            }
+            val paymentMethod = obj.optString("paymentMethod", "").ifBlank {
+                fallbackResult?.paymentMethod ?: "Cartão de Crédito"
+            }
 
             val itemsList = mutableListOf<String>()
             val itemsArr = obj.optJSONArray("items")
-            if (itemsArr != null) {
+            if (itemsArr != null && itemsArr.length() > 0) {
                 for (i in 0 until itemsArr.length()) {
                     itemsList.add(itemsArr.optString(i))
                 }
+            } else if (fallbackResult != null && fallbackResult.items.isNotEmpty()) {
+                itemsList.addAll(fallbackResult.items)
             }
 
             ScannedReceiptResult(
@@ -274,7 +318,7 @@ class GeminiProvider(
                 confidence = "ALTA ($modelName)"
             )
         } catch (e: Exception) {
-            ScannedReceiptResult(
+            fallbackResult ?: ScannedReceiptResult(
                 storeName = "Cupom Fiscal",
                 totalAmount = 0.0,
                 transactionDate = currentDateString(),
@@ -287,23 +331,52 @@ class GeminiProvider(
         }
     }
 
-    private fun analyzeReceiptLocally(bitmap: Bitmap): ScannedReceiptResult {
-        val today = currentDateString()
-        return ScannedReceiptResult(
-            storeName = "Cupom Fiscal Identificado",
-            totalAmount = 0.0,
-            transactionDate = today,
-            category = "Alimentação",
-            paymentMethod = "PIX",
-            items = listOf("Cupom processado (${bitmap.width}x${bitmap.height} px)"),
-            rawText = "Imagem capturada com resolução ${bitmap.width}x${bitmap.height} px.",
-            confidence = "Pronto para confirmação"
-        )
+    private fun extractJsonSubstring(raw: String): String {
+        val s = raw.indexOf('{')
+        val e = raw.lastIndexOf('}')
+        return if (s != -1 && e != -1 && e > s) {
+            raw.substring(s, e + 1)
+        } else {
+            raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        }
+    }
+
+    private fun extractTotalAmount(obj: JSONObject, rawFallbackText: String): Double {
+        val candidateKeys = listOf("totalAmount", "total_amount", "valorTotal", "valor_total", "total", "amount", "vNF", "valor")
+        for (key in candidateKeys) {
+            if (obj.has(key)) {
+                val raw = obj.opt(key)
+                if (raw is Number) {
+                    val d = raw.toDouble()
+                    if (d > 0.0) return d
+                } else if (raw is String) {
+                    val parsed = raw.parseBrDouble()
+                    if (parsed != null && parsed > 0.0) return parsed
+                }
+            }
+        }
+        // Fallback com regex no texto JSON bruto
+        val regex = Regex("""(?:totalAmount|valorTotal|total|pagar)[\"']?\s*:\s*[\"']?([0-9\.,]+)""", RegexOption.IGNORE_CASE)
+        val match = regex.find(rawFallbackText)
+        if (match != null) {
+            val parsed = match.groupValues[1].parseBrDouble()
+            if (parsed != null && parsed > 0.0) return parsed
+        }
+        return 0.0
     }
 
     private fun currentDateString(): String {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         return sdf.format(Date())
+    }
+
+    private fun Bitmap.scalePreservingAspect(maxDim: Int = 1280): Bitmap {
+        val maxSide = max(width, height)
+        if (maxSide <= maxDim) return this
+        val scale = maxDim.toFloat() / maxSide.toFloat()
+        val newWidth = (width * scale).toInt().coerceAtLeast(1)
+        val newHeight = (height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(this, newWidth, newHeight, true)
     }
 
     private fun Bitmap.toBase64(): String {

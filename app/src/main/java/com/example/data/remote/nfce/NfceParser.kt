@@ -1,6 +1,7 @@
 package com.example.data.remote.nfce
 
 import com.example.data.gemini.ScannedReceiptResult
+import com.example.util.parseBrDouble
 import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,21 +69,27 @@ class NfceParser {
      */
     fun extractQrCodeMetadata(input: String): NfceMetadata {
         val cleaned = input.trim()
+        val decodedInput = try {
+            if (cleaned.contains("%")) URLDecoder.decode(cleaned, "UTF-8") else cleaned
+        } catch (e: Exception) {
+            cleaned
+        }
+
         var accessKey = ""
         var totalAmount = 0.0
         var emissionDate = currentDateString()
 
         // 1. Verificar se é uma chave de 44 dígitos direta
-        val keyMatcher = Pattern.compile("(\\d{44})").matcher(cleaned)
+        val keyMatcher = Pattern.compile("(\\d{44})").matcher(decodedInput)
         if (keyMatcher.find()) {
             accessKey = keyMatcher.group(1) ?: ""
         }
 
         // 2. Extrair parâmetros diretos da URL (ex: &vNF=152.80 ou &valor=152.80 ou &total=152.80)
-        val vParamMatcher = Pattern.compile("[?&](?:vNF|valor|total|v)=([\\d\\.,]+)", Pattern.CASE_INSENSITIVE).matcher(cleaned)
+        val vParamMatcher = Pattern.compile("[?&](?:vNF|valor|total|vTotalNf|v)=([\\d\\.,]+)", Pattern.CASE_INSENSITIVE).matcher(decodedInput)
         if (vParamMatcher.find()) {
-            val raw = vParamMatcher.group(1)?.replace(",", ".")
-            val v = raw?.toDoubleOrNull()
+            val raw = vParamMatcher.group(1) ?: ""
+            val v = raw.parseBrDouble()
             if (v != null && v > 0.0) {
                 totalAmount = v
             }
@@ -90,16 +97,11 @@ class NfceParser {
 
         // 3. Extrair parâmetro 'p' (padrão nacional NFC-e QR Code)
         val pParam = when {
-            cleaned.contains("p=") -> {
-                val sub = cleaned.substringAfter("p=")
-                val rawVal = if (sub.contains("&")) sub.substringBefore("&") else sub
-                try {
-                    URLDecoder.decode(rawVal, "UTF-8")
-                } catch (e: Exception) {
-                    rawVal
-                }
+            decodedInput.contains("p=") -> {
+                val sub = decodedInput.substringAfter("p=")
+                if (sub.contains("&")) sub.substringBefore("&") else sub
             }
-            cleaned.contains("|") -> cleaned
+            decodedInput.contains("|") -> decodedInput
             else -> ""
         }
 
@@ -115,15 +117,16 @@ class NfceParser {
             // No padrão nacional da NFC-e:
             // parts[4] ou parts[5] costuma ser o vNF (valor total)
             for ((idx, part) in parts.withIndex()) {
-                val cleanPart = part.trim().replace(",", ".")
-                if (cleanPart.matches(Regex("^\\d+(\\.\\d{1,2})?$"))) {
-                    val candidate = cleanPart.toDoubleOrNull()
-                    if (candidate != null && candidate > 0.0) {
-                        // Evita confundir versão (2) ou ambiente (1/2) nas primeiras posições
-                        if (idx >= 3 || candidate > 5.0) {
-                            if (candidate > totalAmount) {
-                                totalAmount = candidate
-                            }
+                val cleanPart = part.trim()
+                val candidate = cleanPart.parseBrDouble()
+                if (candidate != null && candidate > 0.0) {
+                    // Evita confundir versão (2) ou ambiente (1/2) nas primeiras posições
+                    if (idx >= 3) {
+                        if (idx == 4 || idx == 5) {
+                            totalAmount = candidate
+                            break
+                        } else if (candidate > totalAmount) {
+                            totalAmount = candidate
                         }
                     }
                 }
@@ -201,8 +204,8 @@ class NfceParser {
             for (pat in totalPatterns) {
                 val m = pat.matcher(html)
                 if (m.find()) {
-                    val rawVal = m.group(1)?.replace(".", "")?.replace(",", ".")
-                    val parsed = rawVal?.toDoubleOrNull()
+                    val rawVal = m.group(1) ?: ""
+                    val parsed = rawVal.parseBrDouble()
                     if (parsed != null && parsed > 0.0) {
                         totalAmount = parsed
                         break
