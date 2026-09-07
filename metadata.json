@@ -1,0 +1,6 @@
+{
+  "name": "Cupom & Finanças AI",
+  "description": "Digitalizador de cupons fiscais com IA Gemini, lançamentos manuais, interface web dashboard e API Open Finance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
