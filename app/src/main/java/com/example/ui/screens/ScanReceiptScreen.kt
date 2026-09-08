@@ -72,6 +72,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -116,6 +124,7 @@ fun ScanReceiptScreen(
     scanState: ScanUiState,
     onScanImage: (Bitmap) -> Unit,
     onScanNfceUrlOrKey: (String) -> Unit = {},
+    onScanNfceHtml: (String, String) -> Unit = { _, _ -> },
     onSaveReceipt: (ScannedReceiptResult) -> Unit,
     onResetScan: () -> Unit,
     onBack: () -> Unit
@@ -125,6 +134,8 @@ fun ScanReceiptScreen(
     var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var scanMode by remember { mutableStateOf("CAMERA") } // "CAMERA" ou "NFCE_SEFAZ"
     var nfceInputUrlOrKey by remember { mutableStateOf("") }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    var scraperUrl by remember { mutableStateOf<String?>(null) }
 
     var editableStoreName by remember { mutableStateOf("") }
     var editableAmount by remember { mutableStateOf("") }
@@ -787,9 +798,105 @@ fun ScanReceiptScreen(
             }
         }
     }
+
+    if (scraperUrl != null) {
+        Dialog(
+            onDismissRequest = { scraperUrl = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color(0xFFF3F5FA)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    TopAppBar(
+                        title = { Text("Consultando SEFAZ...", fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+                        navigationIcon = {
+                            IconButton(onClick = { scraperUrl = null }) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancelar")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                    )
+                    
+                    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+                    
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AndroidView(
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                      settings.javaScriptEnabled = true
+                                      settings.domStorageEnabled = true
+                                      settings.useWideViewPort = true
+                                      settings.loadWithOverviewMode = true
+                                      settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                      settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+                                      
+                                      webViewClient = object : WebViewClient() {
+                                          override fun onReceivedSslError(view: WebView?, handler: android.webkit.SslErrorHandler?, error: android.net.http.SslError?) {
+                                              handler?.proceed()
+                                          }
+                                          override fun onPageFinished(view: WebView?, url: String?) {
+                                              super.onPageFinished(view, url)
+                                          }
+                                      }
+                                      loadUrl(scraperUrl!!)
+                                  }
+                            },
+                            update = { wv ->
+                                webViewInstance = wv
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    
+                    Surface(
+                        color = Color.White,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Atenção: Se aparecer o desafio 'Sou Humano' (Captcha), por favor, clique na caixa para liberar o acesso.",
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            Button(
+                                onClick = {
+                                    webViewInstance?.evaluateJavascript("(function() { return document.documentElement.outerHTML; })();") { html ->
+                                                if (!html.isNullOrEmpty() && html != "null") {
+                                                    // Checar Captcha antes de enviar
+                                                    if (html.contains("reCAPTCHA", ignoreCase = true) || html.contains("sou um rob", ignoreCase = true)) {
+                                                        android.widget.Toast.makeText(context, "Resolva o desafio 'Não sou um robô' na tela e aguarde a nota carregar antes de clicar!", android.widget.Toast.LENGTH_LONG).show()
+                                                    } else {
+                                                        // Parse it
+                                                        coroutineScope.launch {
+                                                            var finalHtml = html.replace("\\u003C", "<")
+                                                            finalHtml = finalHtml.replace("\\\"", "\"")
+                                                            finalHtml = finalHtml.replace("\\\\", "\\")
+                                                            onScanNfceHtml(scraperUrl!!, finalHtml)
+                                                            scraperUrl = null
+                                                        }
+                                                    }
+                                                }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Copiar Itens da Tela", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
+ * Tenta decodificar um QR Code a partir de um Bitmap
  * Tenta decodificar um QR Code a partir de um Bitmap usando a biblioteca ZXing.
  */
 fun decodeQrFromBitmap(bitmap: Bitmap): String? {

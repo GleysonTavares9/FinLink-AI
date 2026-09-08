@@ -14,7 +14,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.cupomfinancas.app"
+    applicationId = "com.finlink.app"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
@@ -116,6 +116,8 @@ dependencies {
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
+  // Chrome Custom Tabs - substitui WebView para Open Finance (mais leve e seguro)
+  implementation("androidx.browser:browser:1.8.0")
   implementation(libs.retrofit)
   implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
   implementation("com.google.zxing:core:3.5.3")

@@ -1,24 +1,33 @@
-*.iml
-.gradle
-.kotlin
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+# Environment variables (Do not commit secrets!)
 .env
-debug.keystore
-*.jks
-*.keystore
+.env.local
+.env*.local
+client_secret*.json
+
+# Node dependencies & Next.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+
+# Android Build & Local Files
 *.apk
 *.aab
-/APK_Gerado/
+local.properties
+debug.keystore
+*.jks
+APK_Gerado/
+build/
+.gradle/
+app/build/
+.cxx/
+*.bat
+
+# IDE & OS files
+.DS_Store
+*.pem
+.vscode/
 .idea/
+*.iml

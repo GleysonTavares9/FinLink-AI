@@ -86,7 +86,7 @@ class NfceParser {
         }
 
         // 2. Extrair parâmetros diretos da URL (ex: &vNF=152.80 ou &valor=152.80 ou &total=152.80)
-        val vParamMatcher = Pattern.compile("[?&](?:vNF|valor|total|vTotalNf|v)=([\\d\\.,]+)", Pattern.CASE_INSENSITIVE).matcher(decodedInput)
+        val vParamMatcher = Pattern.compile("[?&](?:vNF|valor|total|vTotalNf)=([\\d\\.,]+)", Pattern.CASE_INSENSITIVE).matcher(decodedInput)
         if (vParamMatcher.find()) {
             val raw = vParamMatcher.group(1) ?: ""
             val v = raw.parseBrDouble()
@@ -115,20 +115,13 @@ class NfceParser {
             }
 
             // No padrão nacional da NFC-e:
-            // parts[4] ou parts[5] costuma ser o vNF (valor total)
-            for ((idx, part) in parts.withIndex()) {
-                val cleanPart = part.trim()
-                val candidate = cleanPart.parseBrDouble()
+            // parts[1] é a versão. Se for "1", parts[5] é o vNF (valor total).
+            // Na versão "2", o valor total foi removido da URL por segurança.
+            val isVersion1 = parts.size > 1 && parts[1].trim() == "1"
+            if (isVersion1 && parts.size > 5) {
+                val candidate = parts[5].trim().parseBrDouble()
                 if (candidate != null && candidate > 0.0) {
-                    // Evita confundir versão (2) ou ambiente (1/2) nas primeiras posições
-                    if (idx >= 3) {
-                        if (idx == 4 || idx == 5) {
-                            totalAmount = candidate
-                            break
-                        } else if (candidate > totalAmount) {
-                            totalAmount = candidate
-                        }
-                    }
+                    totalAmount = candidate
                 }
             }
         }

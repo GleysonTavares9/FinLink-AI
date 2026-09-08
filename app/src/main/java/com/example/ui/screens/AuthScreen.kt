@@ -125,7 +125,7 @@ fun AuthScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            "Conta & Nuvem Supabase",
+                            "Conta Sincronizada",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleLarge,
                             color = Color(0xFF1D1D1F)
@@ -180,7 +180,7 @@ fun AuthScreen(
                             Spacer(modifier = Modifier.width(14.dp))
                             Column {
                                 Text(
-                                    "Segurança com Supabase Cloud",
+                                    "Criptografia de Ponta a Ponta",
                                     fontWeight = FontWeight.Black,
                                     fontSize = 17.sp,
                                     color = Color(0xFF1D1D1F)
@@ -214,28 +214,36 @@ fun AuthScreen(
                                 .padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
+                            Text(
+                                "Meu Perfil",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                color = Color(0xFF1D1D1F)
+                            )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
-                                        .size(54.dp)
+                                        .size(64.dp)
                                         .clip(CircleShape)
-                                        .background(IosGreen.copy(alpha = 0.15f)),
+                                        .background(Brush.linearGradient(listOf(Color(0xFF34C759), Color(0xFF10B981)))),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.Person, contentDescription = null, tint = IosGreen, modifier = Modifier.size(30.dp))
+                                    val initial = if (user.email.isNotBlank()) user.email.take(1).uppercase() else "U"
+                                    Text(initial, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                                 }
-                                Spacer(modifier = Modifier.width(14.dp))
+                                Spacer(modifier = Modifier.width(16.dp))
                                 Column {
                                     Text(
-                                        user.email.ifBlank { "Usuário Conectado" },
+                                        user.email.ifBlank { "Usuário (Sessão Local)" },
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
+                                        fontSize = 18.sp,
                                         color = Color(0xFF1D1D1F)
                                     )
                                     Text(
-                                        "ID: ${user.id.take(16)}...",
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF86868B)
+                                        "Status: Conta Logada ✅",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF34C759),
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                             }
@@ -277,7 +285,7 @@ fun AuthScreen(
                                 } else {
                                     Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(20.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Sincronizar com Nuvem Supabase", fontWeight = FontWeight.Bold)
+                                    Text("Sincronizar Dados", fontWeight = FontWeight.Bold)
                                 }
                             }
 
@@ -606,7 +614,7 @@ fun AuthScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(100.dp))
             }
         }
     }

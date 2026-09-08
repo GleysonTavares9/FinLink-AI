@@ -24,6 +24,9 @@ interface OpenFinanceDao {
     @Query("DELETE FROM open_finance_accounts WHERE id = :id")
     suspend fun deleteAccountById(id: String)
 
+    @Query("DELETE FROM open_finance_transactions WHERE accountId = :accountId")
+    suspend fun deleteTransactionsForAccount(accountId: String)
+
     @Query("SELECT * FROM open_finance_transactions ORDER BY date DESC")
     fun getAllTransactions(): Flow<List<OpenFinanceTransactionEntity>>
 

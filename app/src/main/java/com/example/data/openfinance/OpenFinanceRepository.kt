@@ -1,16 +1,27 @@
 package com.example.data.openfinance
 
+import android.util.Log
 import com.example.data.db.ExpenseDao
 import com.example.data.db.ExpenseEntity
 import com.example.data.db.OpenFinanceAccountEntity
 import com.example.data.db.OpenFinanceDao
 import com.example.data.db.OpenFinanceTransactionEntity
+import com.example.data.remote.supabase.SupabaseClient
 import com.example.util.parseBrDouble
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.regex.Pattern
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 data class OpenFinanceBankInfo(
     val id: String,
@@ -21,10 +32,16 @@ data class OpenFinanceBankInfo(
 
 class OpenFinanceRepository(
     private val openFinanceDao: OpenFinanceDao,
-    private val expenseDao: ExpenseDao
+    private val expenseDao: ExpenseDao,
+    private val supabaseClient: SupabaseClient? = null
 ) {
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     val availableBanks = listOf(
+        OpenFinanceBankInfo("mercadopago", "Mercado Pago", 0xFF009EE3, "323"),
         OpenFinanceBankInfo("nubank", "Nu Pagamentos (Nubank)", 0xFF8A05BE, "260"),
         OpenFinanceBankInfo("itau", "Banco Itaú Unibanco", 0xFFEC7000, "341"),
         OpenFinanceBankInfo("bradesco", "Banco Bradesco", 0xFFCC092F, "237"),
@@ -32,305 +49,343 @@ class OpenFinanceRepository(
         OpenFinanceBankInfo("santander", "Banco Santander", 0xFFEC0000, "033"),
         OpenFinanceBankInfo("inter", "Banco Inter", 0xFFFF7A00, "077"),
         OpenFinanceBankInfo("c6", "C6 Bank", 0xFF242424, "336"),
-        OpenFinanceBankInfo("caixa", "Caixa Econômica Federal", 0xFF0066B3, "104"),
-        OpenFinanceBankInfo("carteira", "Carteira / Dinheiro Físico", 0xFF10B981, "000")
+        OpenFinanceBankInfo("caixa", "Caixa Econômica Federal", 0xFF0066B3, "104")
     )
 
     fun getConnectedAccounts(): Flow<List<OpenFinanceAccountEntity>> = openFinanceDao.getAllAccounts()
 
     fun getTransactions(): Flow<List<OpenFinanceTransactionEntity>> = openFinanceDao.getAllTransactions()
 
+    /**
+     * Obtém o Connect Token seguro gerado no Supabase para abrir o widget Pluggy Connect.
+     */
+    suspend fun fetchPluggyConnectToken(): String? = withContext(Dispatchers.IO) {
+        supabaseClient?.let { sb ->
+            try {
+                val tokenUrl = "${sb.baseUrl}/functions/v1/pluggy-connect?action=token"
+                val req = Request.Builder()
+                    .url(tokenUrl)
+                    .addHeader("apikey", sb.anonKey)
+                    .addHeader("Authorization", "Bearer ${sb.anonKey}")
+                    .post("{}".toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val resp = httpClient.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val bodyStr = resp.body?.string() ?: ""
+                    val json = JSONObject(bodyStr)
+                    val token = json.optString("accessToken")
+                    if (token.isNotBlank()) {
+                        Log.d("OpenFinance", "Connect Token gerado com sucesso!")
+                        return@withContext token
+                    }
+                } else {
+                    Log.e("OpenFinance", "Erro ao obter token: ${resp.code} - ${resp.body?.string()}")
+                }
+            } catch (e: Exception) {
+                Log.e("OpenFinance", "Erro ao obter token via Supabase: ${e.message}")
+            }
+        }
+        null
+    }
+
+    /**
+     * Sincroniza dados reais da Pluggy (Contas, Saldos e Extrato de Transações)
+     * e salva no SQLite local (Room) e no Supabase.
+     */
+    suspend fun syncFromPluggy(itemId: String): Int = withContext(Dispatchers.IO) {
+        var syncedCount = 0
+
+        var accountsJson: JSONArray? = null
+        var transactionsArray: JSONArray? = null
+        var bankName = "Banco Conectado"
+
+        // 1. Chamar a Supabase Edge Function pluggy-connect com action=sync
+        supabaseClient?.let { sb ->
+            try {
+                val syncUrl = "${sb.baseUrl}/functions/v1/pluggy-connect?action=sync"
+                val payload = JSONObject().apply {
+                    put("action", "sync")
+                    put("itemId", itemId)
+                }
+
+                val req = Request.Builder()
+                    .url(syncUrl)
+                    .addHeader("apikey", sb.anonKey)
+                    .addHeader("Authorization", "Bearer ${sb.anonKey}")
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val resp = httpClient.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val bodyStr = resp.body?.string() ?: ""
+                    val json = JSONObject(bodyStr)
+                    val itemObj = json.optJSONObject("item")
+                    bankName = itemObj?.optJSONObject("connector")?.optString("name") ?: "Open Finance"
+                    accountsJson = json.optJSONArray("accounts")
+                    transactionsArray = json.optJSONArray("transactions")
+                    Log.d("OpenFinance", "Sync Pluggy finalizado: Contas: ${accountsJson?.length()}, Transações: ${transactionsArray?.length()}")
+                } else {
+                    Log.e("OpenFinance", "Erro HTTP no sync: ${resp.code} - ${resp.body?.string()}")
+                }
+            } catch (e: Exception) {
+                Log.e("OpenFinance", "Exceção ao sincronizar via Supabase Edge: ${e.message}")
+            }
+        }
+
+        // 2. Fallback: Se não retornou contas da Pluggy, buscar contas gravadas no Supabase REST
+        if ((accountsJson == null || accountsJson.length() == 0) && supabaseClient != null) {
+            try {
+                val restUrl = "${supabaseClient.baseUrl}/rest/v1/open_finance_accounts?select=*"
+                val req = Request.Builder()
+                    .url(restUrl)
+                    .addHeader("apikey", supabaseClient.anonKey)
+                    .addHeader("Authorization", "Bearer ${supabaseClient.anonKey}")
+                    .get()
+                    .build()
+                val resp = httpClient.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val raw = resp.body?.string() ?: "[]"
+                    val parsed = JSONArray(raw)
+                    if (parsed.length() > 0) {
+                        accountsJson = parsed
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("OpenFinance", "Erro ao buscar do Supabase REST: ${e.message}")
+            }
+        }
+
+        // 3. Gravar contas reais no Room Local
+        if (accountsJson != null && accountsJson.length() > 0) {
+            for (i in 0 until accountsJson.length()) {
+                val acc = accountsJson.getJSONObject(i)
+                val accId = acc.optString("id", itemId)
+                val type = acc.optString("account_type", acc.optString("subtype", acc.optString("type", "Conta Corrente")))
+                val balance = acc.optDouble("current_balance", acc.optDouble("balance", 0.0))
+                val number = acc.optString("account_number", acc.optString("number", "0000"))
+                val name = acc.optString("bank_name", acc.optString("name", bankName))
+
+                val entity = OpenFinanceAccountEntity(
+                    id = accId,
+                    bankName = name,
+                    accountType = type.replace("_", " "),
+                    accountNumber = if (number.startsWith("Nº")) number else "Nº $number",
+                    balance = balance,
+                    connectedAt = System.currentTimeMillis(),
+                    status = "CONECTADO",
+                    lastSync = System.currentTimeMillis()
+                )
+                openFinanceDao.insertAccount(entity)
+                syncedCount++
+            }
+        }
+
+        // 4. Gravar transações reais no Room Local e como despesas no App
+        if (transactionsArray != null && transactionsArray.length() > 0) {
+            val txEntities = mutableListOf<OpenFinanceTransactionEntity>()
+            for (j in 0 until transactionsArray.length()) {
+                val tx = transactionsArray.getJSONObject(j)
+                val txId = tx.optString("id", UUID.randomUUID().toString())
+                val accId = tx.optString("account_id", itemId)
+                val desc = tx.optString("description", "Transação Bancária")
+                val rawAmount = tx.optDouble("amount", 0.0)
+                val isExpense = rawAmount < 0 || tx.optString("payment_type") == "DEBIT" || tx.optString("type") == "DEBIT"
+                val absAmount = Math.abs(rawAmount)
+                val date = tx.optString("transaction_date", tx.optString("date", "")).take(10).ifBlank {
+                    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                }
+                val category = tx.optString("category", "Outros")
+
+                // A) Adicionar à lista de transações Open Finance
+                txEntities.add(
+                    OpenFinanceTransactionEntity(
+                        id = txId,
+                        accountId = accId,
+                        description = desc,
+                        amount = absAmount,
+                        date = date,
+                        category = category,
+                        isSyncedToExpenses = true
+                    )
+                )
+
+                // B) Salvar como ExpenseEntity no banco de despesas do App
+                if (isExpense && absAmount > 0.0) {
+                    val expense = ExpenseEntity(
+                        storeName = desc,
+                        totalAmount = absAmount,
+                        category = category,
+                        paymentMethod = "OPEN_FINANCE",
+                        transactionDate = date,
+                        rawOcrText = "Importado via Open Finance ($bankName)",
+                        isManual = false,
+                        source = "OPEN_FINANCE",
+                        notes = "Conta: $bankName | ID: $txId"
+                    )
+                    expenseDao.insertExpense(expense)
+                }
+            }
+            if (txEntities.isNotEmpty()) {
+                openFinanceDao.insertTransactions(txEntities)
+            }
+        }
+
+        syncedCount
+    }
+
+    suspend fun connectPredefinedBank(
+        bank: OpenFinanceBankInfo,
+        accountType: String,
+        initialBalance: Double,
+        accountNumber: String,
+        autoSync: Boolean
+    ): OpenFinanceAccountEntity = withContext(Dispatchers.IO) {
+        val account = OpenFinanceAccountEntity(
+            id = "predef_" + bank.id + "_" + System.currentTimeMillis(),
+            bankName = bank.name,
+            accountType = accountType,
+            accountNumber = accountNumber.ifBlank { "0000" },
+            balance = initialBalance,
+            connectedAt = System.currentTimeMillis(),
+            status = "CONECTADO",
+            lastSync = System.currentTimeMillis()
+        )
+        openFinanceDao.insertAccount(account)
+
+        // Também tentar persistir no Supabase
+        supabaseClient?.let { sb ->
+            try {
+                val payload = JSONObject().apply {
+                    put("id", account.id)
+                    put("bank_name", account.bankName)
+                    put("bank_code", bank.code)
+                    put("account_type", account.accountType)
+                    put("account_number", account.accountNumber)
+                    put("current_balance", account.balance)
+                    put("is_connected", true)
+                }
+                val req = Request.Builder()
+                    .url("${sb.baseUrl}/rest/v1/open_finance_accounts")
+                    .addHeader("apikey", sb.anonKey)
+                    .addHeader("Authorization", "Bearer ${sb.anonKey}")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "resolution=merge-duplicates")
+                    .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (e: Exception) {
+                Log.e("OpenFinance", "Erro ao salvar conta no Supabase: ${e.message}")
+            }
+        }
+
+        account
+    }
+
     suspend fun createAccount(
         bankName: String,
         accountType: String,
         accountNumber: String,
         initialBalance: Double,
-        autoSyncTransactions: Boolean = true
-    ): OpenFinanceAccountEntity {
-        val accountId = "acc_${System.currentTimeMillis()}"
-        val cleanAccountNumber = accountNumber.ifBlank { "Ag 0001 • C/C 87642-1" }
-
-        val newAccount = OpenFinanceAccountEntity(
-            id = accountId,
+        autoSync: Boolean = true
+    ): OpenFinanceAccountEntity = withContext(Dispatchers.IO) {
+        val account = OpenFinanceAccountEntity(
+            id = "custom_" + UUID.randomUUID().toString(),
             bankName = bankName,
             accountType = accountType,
-            accountNumber = cleanAccountNumber,
+            accountNumber = accountNumber.ifBlank { "0000" },
             balance = initialBalance,
+            connectedAt = System.currentTimeMillis(),
             status = "CONECTADO",
             lastSync = System.currentTimeMillis()
         )
-        openFinanceDao.insertAccount(newAccount)
-
-        if (autoSyncTransactions) {
-            syncAccountTransactions(accountId, initialSync = true)
-        }
-
-        return newAccount
+        openFinanceDao.insertAccount(account)
+        account
     }
 
-    suspend fun connectPredefinedBank(
-        bankInfo: OpenFinanceBankInfo,
-        accountType: String = if (bankInfo.id == "nubank") "Cartão de Crédito / NuConta" else "Conta Corrente",
-        initialBalance: Double = 1500.0,
-        accountNumber: String = "Ag 0001 • C/C ${((10000..99999).random())}-${(1..9).random()}",
-        autoSync: Boolean = true
-    ): OpenFinanceAccountEntity {
-        return createAccount(
-            bankName = bankInfo.name,
-            accountType = accountType,
-            accountNumber = accountNumber,
-            initialBalance = initialBalance,
-            autoSyncTransactions = autoSync
-        )
-    }
+    suspend fun disconnectBank(bankId: String) = disconnectAccount(bankId)
 
-    suspend fun syncAccountTransactions(accountId: String, initialSync: Boolean = false): Int {
-        val account = openFinanceDao.getAccountById(accountId) ?: return 0
-        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.forLanguageTag("pt-BR"))
-        val today = sdf.format(Date())
-
-        val calendar = java.util.Calendar.getInstance()
-        calendar.add(java.util.Calendar.DAY_OF_YEAR, -1)
-        val yesterday = sdf.format(calendar.time)
-        calendar.add(java.util.Calendar.DAY_OF_YEAR, -2)
-        val twoDaysAgo = sdf.format(calendar.time)
-
-        // Modelos de transações bancárias autênticas do Brasil (valores em Real Brasileiro)
-        val candidateExpenses = if (initialSync) {
-            listOf(
-                ExpenseEntity(
-                    storeName = "Supermercado Pão de Açúcar",
-                    totalAmount = 142.80,
-                    transactionDate = yesterday,
-                    category = "Alimentação",
-                    paymentMethod = if (account.accountType.contains("Crédito")) "Cartão de Crédito" else "PIX",
-                    isManual = false,
-                    source = account.bankName,
-                    notes = "Sincronizado via Open Finance Brasil (${account.bankName})"
-                ),
-                ExpenseEntity(
-                    storeName = "Posto Shell Combustível",
-                    totalAmount = 85.00,
-                    transactionDate = today,
-                    category = "Transporte",
-                    paymentMethod = if (account.accountType.contains("Crédito")) "Cartão de Crédito" else "Cartão de Débito",
-                    isManual = false,
-                    source = account.bankName,
-                    notes = "Sincronizado via Open Finance Brasil (${account.bankName})"
-                ),
-                ExpenseEntity(
-                    storeName = "Drogaria São Paulo",
-                    totalAmount = 43.50,
-                    transactionDate = twoDaysAgo,
-                    category = "Saúde",
-                    paymentMethod = "PIX",
-                    isManual = false,
-                    source = account.bankName,
-                    notes = "Sincronizado via Open Finance Brasil (${account.bankName})"
-                )
-            )
-        } else {
-            // Nova transação em sincronização manual periódica
-            listOf(
-                ExpenseEntity(
-                    storeName = "Padaria e Restaurante",
-                    totalAmount = 32.90,
-                    transactionDate = today,
-                    category = "Alimentação",
-                    paymentMethod = "PIX",
-                    isManual = false,
-                    source = account.bankName,
-                    notes = "Sincronização em Tempo Real (${account.bankName})"
-                )
-            )
-        }
-
-        var importedCount = 0
-        var totalDeducted = 0.0
-        for (expense in candidateExpenses) {
-            expenseDao.insertExpense(expense)
-            totalDeducted += expense.totalAmount
-            importedCount++
-        }
-
-        // Atualiza o saldo e o horário da sincronização da conta
-        val updatedBalance = (account.balance - totalDeducted).coerceAtLeast(0.0)
-        openFinanceDao.updateAccount(
-            account.copy(
-                balance = if (account.balance > 0) updatedBalance else account.balance,
-                lastSync = System.currentTimeMillis(),
-                status = "CONECTADO"
-            )
-        )
-
-        return importedCount
-    }
-
-    suspend fun disconnectBank(accountId: String) {
+    suspend fun disconnectAccount(accountId: String) = withContext(Dispatchers.IO) {
         openFinanceDao.deleteAccountById(accountId)
+        openFinanceDao.deleteTransactionsForAccount(accountId)
+
+        // Remover também do Supabase
+        supabaseClient?.let { sb ->
+            try {
+                val req = Request.Builder()
+                    .url("${sb.baseUrl}/rest/v1/open_finance_accounts?id=eq.$accountId")
+                    .addHeader("apikey", sb.anonKey)
+                    .addHeader("Authorization", "Bearer ${sb.anonKey}")
+                    .delete()
+                    .build()
+                httpClient.newCall(req).execute()
+            } catch (_: Exception) {}
+        }
     }
 
-    suspend fun importStatementText(rawText: String, targetAccountId: String? = null): Int {
-        val lines = rawText.split("\n")
+    /**
+     * Importa extratos manuais em texto (OFX, cópia de extrato bancário).
+     */
+    suspend fun importStatementText(rawText: String, targetAccountId: String? = null): Int = withContext(Dispatchers.IO) {
         var count = 0
-        val currentDate = SimpleDateFormat("yyyy-MM-dd", Locale.forLanguageTag("pt-BR")).format(Date())
-
-        val targetAccount = targetAccountId?.let { openFinanceDao.getAccountById(it) }
-        val bankSourceName = targetAccount?.bankName ?: "Extrato Bancário"
-        var totalAmountImported = 0.0
+        val lines = rawText.lines()
+        val txEntities = mutableListOf<OpenFinanceTransactionEntity>()
 
         for (line in lines) {
             val trimmed = line.trim()
-            if (trimmed.isBlank()) continue
+            if (trimmed.length < 5) continue
 
-            val parsedExpense = parseSingleStatementLine(trimmed, currentDate, bankSourceName)
-            if (parsedExpense != null) {
-                expenseDao.insertExpense(parsedExpense)
-                totalAmountImported += parsedExpense.totalAmount
-                count++
-            }
-        }
+            val dateRegex = Regex("(\\d{2}/\\d{2}/\\d{4}|\\d{4}-\\d{2}-\\d{2})")
+            val amountRegex = Regex("(R\\$\\s*)?([+-]?\\s*\\d{1,3}(\\.\\d{3})*,\\d{2}|\\d+\\.\\d{2})")
 
-        if (targetAccount != null && totalAmountImported > 0) {
-            val newBalance = (targetAccount.balance - totalAmountImported).coerceAtLeast(0.0)
-            openFinanceDao.updateAccount(targetAccount.copy(balance = newBalance, lastSync = System.currentTimeMillis()))
-        }
+            val dateMatch = dateRegex.find(trimmed)?.value ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+            val amountMatch = amountRegex.find(trimmed)?.value
 
-        return count
-    }
+            if (amountMatch != null) {
+                val parsedAmount = amountMatch.parseBrDouble() ?: 0.0
+                val absAmount = Math.abs(parsedAmount)
+                if (absAmount > 0.0) {
+                    val desc = trimmed.replace(dateRegex, "").replace(amountRegex, "").trim()
+                    val finalDesc = if (desc.length > 2) desc else "Transação Bancária Importada"
+                    val txId = UUID.randomUUID().toString()
 
-    private fun parseSingleStatementLine(line: String, defaultDate: String, bankSourceName: String): ExpenseEntity? {
-        // Padrão de extração para moeda brasileira (ex: R$ 150,00, R$ 1.250,50, 45,90, 45.90)
-        val amountPattern = Pattern.compile("(?:R\\$|BRL)?\\s*([0-9]+(?:\\.[0-9]{3})*,[0-9]{2}|[0-9]+[.,][0-9]{2})", Pattern.CASE_INSENSITIVE)
-        val matcher = amountPattern.matcher(line)
+                    txEntities.add(
+                        OpenFinanceTransactionEntity(
+                            id = txId,
+                            accountId = targetAccountId ?: "default_account",
+                            description = finalDesc,
+                            amount = absAmount,
+                            date = dateMatch,
+                            category = "Extrato Bancário",
+                            isSyncedToExpenses = true
+                        )
+                    )
 
-        var amount = 0.0
-        var amountMatched = ""
-        if (matcher.find()) {
-            amountMatched = matcher.group(0) ?: ""
-            val rawNum = matcher.group(1) ?: ""
-            amount = rawNum.parseBrDouble() ?: 0.0
-        }
-
-        if (amount <= 0.0) return null
-
-        // Extração de Data (ex: 14/08/2026, 14/08 ou 2026-08-14)
-        val datePattern = Pattern.compile("([0-9]{1,2}/[0-9]{1,2}(?:/[0-9]{2,4})?)|([0-9]{4}-[0-9]{2}-[0-9]{2})")
-        val dateMatcher = datePattern.matcher(line)
-        var parsedDate = defaultDate
-        if (dateMatcher.find()) {
-            val d = dateMatcher.group(0) ?: ""
-            if (d.contains("/")) {
-                val parts = d.split("/")
-                val day = parts.getOrNull(0)?.padStart(2, '0') ?: "01"
-                val month = parts.getOrNull(1)?.padStart(2, '0') ?: "01"
-                val year = if (parts.size >= 3) {
-                    if (parts[2].length == 2) "20" + parts[2] else parts[2]
-                } else {
-                    SimpleDateFormat("yyyy", Locale.forLanguageTag("pt-BR")).format(Date())
+                    val expense = ExpenseEntity(
+                        storeName = finalDesc,
+                        totalAmount = absAmount,
+                        category = "Extrato Bancário",
+                        paymentMethod = "OPEN_FINANCE",
+                        transactionDate = dateMatch,
+                        rawOcrText = "Importação de Extrato",
+                        isManual = false,
+                        source = "OPEN_FINANCE",
+                        notes = "Importado via Extrato Bancário"
+                    )
+                    expenseDao.insertExpense(expense)
+                    count++
                 }
-                parsedDate = "$year-$month-$day"
-            } else if (d.contains("-")) {
-                parsedDate = d
             }
         }
 
-        // Limpeza do nome do estabelecimento
-        var merchant = line
-        if (amountMatched.isNotBlank()) {
-            merchant = merchant.replace(amountMatched, "")
+        if (txEntities.isNotEmpty()) {
+            openFinanceDao.insertTransactions(txEntities)
         }
-        merchant = merchant.replace(Pattern.compile("([0-9]{1,2}/[0-9]{1,2}(?:/[0-9]{2,4})?)|([0-9]{4}-[0-9]{2}-[0-9]{2})").toRegex(), "")
-        merchant = merchant.replace(Regex("(?i)(PIX Enviado|PIX Recebido|Compra no Débito|Compra no Crédito|TED|DOC|Pagamento|Cartão|Boleto)"), "")
-        merchant = merchant.replace(Regex("[-–—:;,]"), " ").trim()
-
-        if (merchant.isBlank()) {
-            merchant = "Lançamento de Extrato"
-        }
-
-        // Detecção de Categoria
-        val lowerLine = line.lowercase(Locale.forLanguageTag("pt-BR"))
-        val category = when {
-            lowerLine.contains("mercado") || lowerLine.contains("supermercado") || lowerLine.contains("pão de açúcar") ||
-            lowerLine.contains("carrefour") || lowerLine.contains("padaria") || lowerLine.contains("restaurante") ||
-            lowerLine.contains("lanche") || lowerLine.contains("ifood") || lowerLine.contains("café") -> "Alimentação"
-
-            lowerLine.contains("uber") || lowerLine.contains("99") || lowerLine.contains("posto") ||
-            lowerLine.contains("gasolina") || lowerLine.contains("combustivel") || lowerLine.contains("estacionamento") ||
-            lowerLine.contains("pedagio") -> "Transporte"
-
-            lowerLine.contains("farmacia") || lowerLine.contains("drogaria") || lowerLine.contains("raia") ||
-            lowerLine.contains("drogasil") || lowerLine.contains("medico") || lowerLine.contains("consulta") ||
-            lowerLine.contains("hospital") || lowerLine.contains("dentista") -> "Saúde"
-
-            lowerLine.contains("cinema") || lowerLine.contains("netflix") || lowerLine.contains("spotify") ||
-            lowerLine.contains("jogos") || lowerLine.contains("show") || lowerLine.contains("bar") ||
-            lowerLine.contains("viagem") -> "Lazer"
-
-            lowerLine.contains("aluguel") || lowerLine.contains("condominio") || lowerLine.contains("luz") ||
-            lowerLine.contains("energia") || lowerLine.contains("agua") || lowerLine.contains("internet") -> "Moradia"
-
-            else -> "Outros"
-        }
-
-        val paymentMethod = when {
-            lowerLine.contains("pix") -> "PIX"
-            lowerLine.contains("débito") || lowerLine.contains("debito") -> "Cartão de Débito"
-            lowerLine.contains("crédito") || lowerLine.contains("credito") -> "Cartão de Crédito"
-            lowerLine.contains("boleto") -> "Boleto"
-            lowerLine.contains("dinheiro") -> "Dinheiro"
-            else -> "PIX"
-        }
-
-        return ExpenseEntity(
-            storeName = merchant.take(40),
-            totalAmount = amount,
-            transactionDate = parsedDate,
-            category = category,
-            paymentMethod = paymentMethod,
-            isManual = false,
-            source = bankSourceName,
-            notes = "Importado via Extrato Open Finance"
-        )
+        count
     }
 
     fun getApiSpecJson(): String {
-        return """
-            {
-              "open_finance_brasil": {
-                "version": "v3.0.1",
-                "authority": "Banco Central do Brasil (BACEN)",
-                "directory": "https://directory.openfinancebrasil.org.br",
-                "supported_apis": [
-                  {
-                    "api": "Consents API",
-                    "version": "v3.0",
-                    "endpoints": ["POST /open-banking/consents/v3/consents"]
-                  },
-                  {
-                    "api": "Accounts API",
-                    "version": "v2.0",
-                    "endpoints": ["GET /open-banking/accounts/v2/accounts/{accountId}/balances"]
-                  },
-                  {
-                    "api": "Credit Cards Accounts API",
-                    "version": "v2.0",
-                    "endpoints": ["GET /open-banking/credit-cards-accounts/v2/accounts/{accountId}/bills"]
-                  },
-                  {
-                    "api": "Automatic Payments (Pix Automático / ITP)",
-                    "version": "v4.0",
-                    "endpoints": ["POST /open-banking/payments/v4/pix/payments"]
-                  }
-                ],
-                "security": {
-                  "tls_version": "TLS 1.3",
-                  "mtls_client_cert": "ICP-Brasil / Open Finance Directory Signed",
-                  "fapi_profile": "FAPI 1.0 Advanced / FAPI 2.0 Security Profile",
-                  "jws_algorithm": "PS256"
-                }
-              }
-            }
-        """.trimIndent()
+        return "{\"standard\": \"Open Finance Brasil - BACEN\", \"security\": \"FAPI 1.0 Advanced / OAuth 2.0 mTLS\"}"
     }
 }

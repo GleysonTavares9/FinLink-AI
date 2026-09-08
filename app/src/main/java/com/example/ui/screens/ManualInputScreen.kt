@@ -369,7 +369,7 @@ fun ManualInputScreen(
                     Text("Salvar Despesa no Banco", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(100.dp))
             }
         }
     }

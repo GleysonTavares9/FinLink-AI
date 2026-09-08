@@ -126,6 +126,38 @@ class SupabaseClient(
         }
     }
 
+    
+    
+
+    
+    // Extrai o token do fragmento da URI do OAuth
+    fun parseSessionFromUri(uri: android.net.Uri): Result<SupabaseSession> {
+        try {
+            val fragment = uri.fragment ?: return Result.failure(Exception("Nenhum token encontrado na URL"))
+            val params = fragment.split("&").associate { 
+                val parts = it.split("=")
+                parts[0] to if (parts.size > 1) parts[1] else ""
+            }
+            
+            val accessToken = params["access_token"]
+            val refreshToken = params["refresh_token"]
+            
+            if (accessToken.isNullOrBlank()) {
+                return Result.failure(Exception("Access token não encontrado"))
+            }
+            
+            val session = SupabaseSession(
+                accessToken = accessToken,
+                refreshToken = refreshToken ?: "",
+                user = SupabaseUser("google-oauth-user", "Conta Google (Sincronizada)", ""), // Mock user para OAuth já que o /user endpoint não está implementado
+                expiresAt = System.currentTimeMillis() + (params["expires_in"]?.toLongOrNull() ?: 3600) * 1000
+            )
+            return Result.success(session)
+        } catch (e: Exception) {
+            return Result.failure(e)
+        }
+    }
+
     suspend fun signOut(): Result<Unit> = withContext(Dispatchers.IO) {
         val currentSession = sessionManager.getSession()
         if (isConfigured && currentSession != null) {

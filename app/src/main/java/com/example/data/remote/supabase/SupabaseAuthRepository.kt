@@ -45,6 +45,21 @@ class SupabaseAuthRepository(
         return result
     }
 
+    
+    suspend fun handleOAuthCallback(uri: android.net.Uri) {
+        _authState.value = AuthUiState.Loading
+        val result = client.parseSessionFromUri(uri)
+        result.fold(
+            onSuccess = { session ->
+                sessionManager.saveSession(session)
+                _authState.value = AuthUiState.Authenticated(session)
+            },
+            onFailure = { error ->
+                _authState.value = AuthUiState.Error(error.message ?: "Erro no OAuth")
+            }
+        )
+    }
+
     suspend fun signOut() {
         client.signOut()
         _authState.value = AuthUiState.Unauthenticated
