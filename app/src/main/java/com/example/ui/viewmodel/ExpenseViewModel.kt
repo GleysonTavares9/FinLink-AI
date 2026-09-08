@@ -12,6 +12,11 @@ import com.example.data.db.OpenFinanceAccountEntity
 import com.example.data.gemini.ScannedReceiptResult
 import com.example.data.openfinance.OpenFinanceBankInfo
 import com.example.data.openfinance.OpenFinanceRepository
+import com.example.data.agent.AgentRepository
+import com.example.data.model.AgentInfo
+import com.example.data.model.AgentNotification
+import com.example.data.model.CustomAgent
+import com.example.data.model.MonthlyReport
 import com.example.data.remote.ai.AiProvider
 import com.example.data.remote.ai.AiProviderFactory
 import com.example.data.remote.nfce.NfceFetcher
@@ -52,12 +57,68 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val nfceFetcher = NfceFetcher()
     private val calculateBudgetUseCase = CalculateBudgetUseCase()
 
-    val openFinanceRepo = OpenFinanceRepository(openFinanceDao, expenseDao)
-
     private val supabaseSessionManager = SupabaseSessionManager(application)
-    private val supabaseClient = SupabaseClient(supabaseSessionManager)
+    val supabaseClient = SupabaseClient(supabaseSessionManager)
     val supabaseAuthRepo = SupabaseAuthRepository(supabaseClient, supabaseSessionManager)
     val supabaseSyncRepo = SupabaseSyncRepository(supabaseClient, supabaseSessionManager, expenseDao, householdDao)
+
+    val openFinanceRepo = OpenFinanceRepository(openFinanceDao, expenseDao, supabaseClient)
+
+    val transactionRepo = com.example.data.repository.TransactionRepository(expenseDao, openFinanceDao)
+
+    val unifiedTransactions: StateFlow<List<com.example.data.model.UnifiedTransaction>> = transactionRepo.getUnifiedTransactions()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val subscriptions: StateFlow<List<com.example.data.model.SubscriptionItem>> = transactionRepo.subscriptions
+
+    val appOfferings: List<com.example.data.model.AppOfferingFeature> = transactionRepo.getAllOfferings()
+
+    fun toggleSubscriptionStatus(subId: String) {
+        transactionRepo.toggleSubscriptionStatus(subId)
+    }
+
+    fun addSubscription(item: com.example.data.model.SubscriptionItem) {
+        transactionRepo.addSubscription(item)
+    }
+
+    fun addUnifiedTransaction(
+        title: String,
+        amount: Double,
+        type: com.example.data.model.TransactionType,
+        category: String,
+        paymentMethod: String,
+        date: String,
+        bankName: String = "Mercado Pago",
+        notes: String? = null
+    ) {
+        viewModelScope.launch {
+            transactionRepo.addManualTransaction(title, amount, type, category, paymentMethod, date, bankName, notes)
+        }
+    }
+
+    val agentRepo = AgentRepository(application)
+
+    private val _defaultAgents = MutableStateFlow<List<AgentInfo>>(agentRepo.getDefaultAgents())
+    val defaultAgents: StateFlow<List<AgentInfo>> = _defaultAgents.asStateFlow()
+
+    private val _agentNotifications = MutableStateFlow<List<AgentNotification>>(emptyList())
+    val agentNotifications: StateFlow<List<AgentNotification>> = _agentNotifications.asStateFlow()
+
+    private val _customAgents = MutableStateFlow<List<CustomAgent>>(emptyList())
+    val customAgents: StateFlow<List<CustomAgent>> = _customAgents.asStateFlow()
+
+    private val _monthlyReport = MutableStateFlow<MonthlyReport?>(null)
+    val monthlyReport: StateFlow<MonthlyReport?> = _monthlyReport.asStateFlow()
+
+    private val _isAgentRunning = MutableStateFlow(false)
+    val isAgentRunning: StateFlow<Boolean> = _isAgentRunning.asStateFlow()
+
+    private val _agentStatusMessage = MutableStateFlow("")
+    val agentStatusMessage: StateFlow<String> = _agentStatusMessage.asStateFlow()
 
     val authState: StateFlow<AuthUiState> = supabaseAuthRepo.authState
 
@@ -184,6 +245,21 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+        fun scanNfceHtml(html: String, urlOrKey: String) {
+        viewModelScope.launch {
+            _scanState.value = ScanUiState.Scanning
+            val result = nfceFetcher.fetchReceiptFromHtml(html, urlOrKey)
+            result.fold(
+                onSuccess = { receipt ->
+                    _scanState.value = ScanUiState.Success(receipt)
+                },
+                onFailure = { error ->
+                    _scanState.value = ScanUiState.Error(error.message ?: "Erro ao extrair NFC-e a partir do navegador")
+                }
+            )
+        }
+    }
+
     fun scanNfceUrlOrKey(urlOrKey: String) {
         viewModelScope.launch {
             _scanState.value = ScanUiState.Scanning
@@ -259,9 +335,26 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun fetchPluggyConnectToken(onReady: (String?) -> Unit) {
+        viewModelScope.launch {
+            val token = openFinanceRepo.fetchPluggyConnectToken()
+            onReady(token)
+        }
+    }
+
+    fun syncFromPluggy(itemId: String, onComplete: (Int) -> Unit = {}) {
+        viewModelScope.launch {
+            val count = openFinanceRepo.syncFromPluggy(itemId)
+            if (supabaseAuthRepo.getCurrentSession() != null) {
+                syncWithCloud()
+            }
+            onComplete(count)
+        }
+    }
+
     fun syncOpenFinanceAccount(accountId: String, onComplete: (Int) -> Unit) {
         viewModelScope.launch {
-            val count = openFinanceRepo.syncAccountTransactions(accountId)
+            val count = openFinanceRepo.syncFromPluggy(accountId)
             if (count > 0 && supabaseAuthRepo.getCurrentSession() != null) {
                 syncWithCloud()
             }
@@ -371,6 +464,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    
+    
+
+    
+    fun handleAuthDeepLink(uri: android.net.Uri) {
+        viewModelScope.launch {
+            supabaseAuthRepo.handleOAuthCallback(uri)
+            syncWithCloud()
+        }
+    }
+
     fun signOut() {
         viewModelScope.launch {
             supabaseAuthRepo.signOut()
@@ -393,5 +497,46 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
-}
 
+    fun loadAgentsData() {
+        viewModelScope.launch {
+            _agentNotifications.value = agentRepo.fetchNotifications()
+            _customAgents.value = agentRepo.fetchCustomAgents()
+            _monthlyReport.value = agentRepo.fetchMonthlyReport()
+        }
+    }
+
+    fun runAlbertTriage() {
+        viewModelScope.launch {
+            _isAgentRunning.value = true
+            _agentStatusMessage.value = "Guardião Diário analisando anomalias e duplicidades..."
+            val res = agentRepo.runAlbertTriage()
+            _agentStatusMessage.value = res.getOrDefault("Varredura concluída com sucesso.")
+            _agentNotifications.value = agentRepo.fetchNotifications()
+            _isAgentRunning.value = false
+        }
+    }
+
+    fun createCustomAgent(prompt: String, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            _isAgentRunning.value = true
+            _agentStatusMessage.value = "Transformando regra em agente autônomo com IA..."
+            val res = agentRepo.createCustomAgentFromPrompt(prompt)
+            if (res.isSuccess) {
+                _customAgents.value = agentRepo.fetchCustomAgents()
+                _agentStatusMessage.value = "Novo Agente Ativado com Sucesso!"
+                onComplete(true)
+            } else {
+                _agentStatusMessage.value = "Falha ao criar agente."
+                onComplete(false)
+            }
+            _isAgentRunning.value = false
+        }
+    }
+
+    fun toggleCustomAgent(agentId: String) {
+        _customAgents.value = _customAgents.value.map { custom ->
+            if (custom.id == agentId) custom.copy(isActive = !custom.isActive) else custom
+        }
+    }
+}

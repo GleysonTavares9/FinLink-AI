@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -41,6 +42,9 @@ import androidx.compose.material.icons.filled.FamilyRestroom
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -71,12 +75,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.data.remote.supabase.AuthUiState
+import com.example.ui.screens.ActivitiesScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.GeminiAssistantScreen
 import com.example.ui.screens.HouseholdScreen
 import com.example.ui.screens.ManualInputScreen
 import com.example.ui.screens.OpenFinanceScreen
+import com.example.ui.screens.ProfileAndOfferingsScreen
 import com.example.ui.screens.ScanReceiptScreen
 import com.example.ui.screens.SplashScreen
 import com.example.ui.theme.IosBlue
@@ -95,7 +101,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+        )
+        handleDeepLink(intent)
 
         // Agendamento diário de lembretes para envio de dados e notas fiscais
         com.example.util.DailyReminderManager.scheduleDailyReminder(this)
@@ -125,6 +135,8 @@ class MainActivity : ComponentActivity() {
                 val syncResult by viewModel.syncResult.collectAsStateWithLifecycle()
                 val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
                 val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
+                val unifiedTransactions by viewModel.unifiedTransactions.collectAsStateWithLifecycle()
+                val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
 
                 var isSuspendedMenuOpen by remember { mutableStateOf(false) }
 
@@ -190,7 +202,8 @@ class MainActivity : ComponentActivity() {
                                     scanState = scanState,
                                     onBack = { navController.popBackStack() },
                                     onScanImage = { bmp -> viewModel.scanReceiptWithGemini(bmp) },
-                                    onScanNfceUrlOrKey = { urlOrKey -> viewModel.scanNfceUrlOrKey(urlOrKey) },
+                                                                onScanNfceUrlOrKey = { urlOrKey -> viewModel.scanNfceUrlOrKey(urlOrKey) },
+                            onScanNfceHtml = { html, url -> viewModel.scanNfceHtml(html, url) },
                                     onSaveReceipt = { res -> viewModel.saveScannedReceipt(res) },
                                     onResetScan = { viewModel.resetScanState() }
                                 )
@@ -214,7 +227,8 @@ class MainActivity : ComponentActivity() {
                                     onImportStatementText = { text, targetId, onDone ->
                                         viewModel.importBankStatementText(text, targetId, onDone)
                                     },
-                                    onDisconnectBank = { id -> viewModel.disconnectOpenFinanceAccount(id) }
+                                    onDisconnectBank = { id -> viewModel.disconnectOpenFinanceAccount(id) },
+                                    onFetchToken = { callback -> viewModel.fetchPluggyConnectToken(callback) }
                                 )
                             }
 
@@ -251,6 +265,41 @@ class MainActivity : ComponentActivity() {
                                     onSignUp = { email, pass -> viewModel.signUp(email, pass) },
                                     onSignOut = { viewModel.signOut() },
                                     onSyncWithCloud = { viewModel.syncWithCloud() },
+                        onGoogleSignIn = {
+                            val googleAuthUrl = "${viewModel.supabaseClient.baseUrl}/auth/v1/authorize?provider=google&redirect_to=finlink://auth-callback"
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(googleAuthUrl))
+                            startActivity(intent)
+                        },
+                        onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable("activities") {
+                                ActivitiesScreen(
+                                    transactions = unifiedTransactions,
+                                    onNavigateToScan = { navController.navigate("scan_receipt") },
+                                    onNavigateToAi = { navController.navigate("ai_assistant") },
+                                    onNavigateToManual = { navController.navigate("manual_input") },
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable("profile") {
+                                val email = if (authState is AuthUiState.Authenticated) (authState as AuthUiState.Authenticated).session.user.email ?: "gleyson@finlink.ai" else "gleyson@finlink.ai"
+                                ProfileAndOfferingsScreen(
+                                    userFullName = "GLEYSON TAVARES DE MIRANDA",
+                                    userEmail = email,
+                                    connectedBankCount = connectedAccounts.size.coerceAtLeast(1),
+                                    appOfferings = viewModel.appOfferings,
+                                    subscriptions = subscriptions,
+                                    onToggleSubscription = { subId -> viewModel.toggleSubscriptionStatus(subId) },
+                                    onNavigateToOpenFinance = { navController.navigate("open_finance") },
+                                    onSignOut = {
+                                        viewModel.signOut()
+                                        navController.navigate("auth") {
+                                            popUpTo("dashboard") { inclusive = true }
+                                        }
+                                    },
                                     onBack = { navController.popBackStack() }
                                 )
                             }
@@ -283,6 +332,14 @@ class MainActivity : ComponentActivity() {
                         IosSuspendedActionMenu(
                             isCloudConnected = authState is AuthUiState.Authenticated,
                             realCount = expenses.size,
+                            onActivities = {
+                                isSuspendedMenuOpen = false
+                                navController.navigate("activities")
+                            },
+                            onProfile = {
+                                isSuspendedMenuOpen = false
+                                navController.navigate("profile")
+                            },
                             onScanReceipt = {
                                 isSuspendedMenuOpen = false
                                 navController.navigate("scan_receipt")
@@ -315,7 +372,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // DOCK FLUTUANTE DE NAVEGAÇÃO TRANSLÚCIDO (Floating Glass Bar)
-                    if (currentRoute != "splash") {
+                    if (currentRoute != "splash" && authState is AuthUiState.Authenticated) {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
@@ -341,6 +398,37 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Quando o usuário volta do navegador após conectar uma conta bancária,
+        // sincroniza automaticamente as novas contas cadastradas na nuvem
+        viewModel.syncOpenFinanceAccount("sync_all") {}
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: android.content.Intent?) {
+        val uri = intent?.data ?: return
+        
+        if (uri.scheme == "finlink") {
+            if (uri.host == "auth-callback") {
+                viewModel.handleAuthDeepLink(uri)
+            } else if (uri.host == "pluggy-callback") {
+                val itemId = uri.getQueryParameter("itemId")
+                if (itemId != null) {
+                    android.widget.Toast.makeText(this@MainActivity, "Conexão bancária realizada com sucesso! Sincronizando contas...", android.widget.Toast.LENGTH_SHORT).show()
+                    viewModel.syncFromPluggy(itemId) { count ->
+                        android.widget.Toast.makeText(this@MainActivity, "Sincronização concluída: $count transações importadas!", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 /**
@@ -350,6 +438,8 @@ class MainActivity : ComponentActivity() {
 fun IosSuspendedActionMenu(
     isCloudConnected: Boolean,
     realCount: Int,
+    onActivities: () -> Unit,
+    onProfile: () -> Unit,
     onScanReceipt: () -> Unit,
     onManualExpense: () -> Unit,
     onOpenFinance: () -> Unit,
@@ -361,7 +451,7 @@ fun IosSuspendedActionMenu(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(24.dp, RoundedCornerShape(28.dp), spotColor = Color(0x28000000)),
+            .shadow(24.dp, RoundedCornerShape(28.dp), spotColor = Color(0x11000000)),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
@@ -371,8 +461,8 @@ fun IosSuspendedActionMenu(
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xF8FFFFFF),
-                            Color(0xFAF4F6FB)
+                            Color(0x99FFFFFF),
+                                Color(0x66F4F6FB)
                         )
                     )
                 )
@@ -439,6 +529,30 @@ fun IosSuspendedActionMenu(
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Grid de Ações Rápidas com ícones iOS coloridos
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    IosMenuItem(
+                        title = "Atividades",
+                        subtitle = "Entradas e Saídas",
+                        icon = Icons.Default.SwapVert,
+                        gradient = listOf(IosGreen, Color(0xFF0F766E)),
+                        onClick = onActivities,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IosMenuItem(
+                        title = "Perfil & Planos",
+                        subtitle = "Seja PRO e Recursos",
+                        icon = Icons.Default.Person,
+                        gradient = listOf(IosPurple, Color(0xFF6D28D9)),
+                        onClick = onProfile,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -627,13 +741,13 @@ fun IosFloatingDock(
                     onClick = { onNavigate("dashboard") }
                 )
 
-                // Item 2: Bancos
+                // Item 2: Atividades (Extrato completo com entradas, saídas e assinaturas)
                 IosDockTab(
-                    icon = Icons.Default.AccountBalance,
-                    label = "Bancos",
-                    isSelected = currentRoute == "open_finance",
-                    activeColor = IosIndigo,
-                    onClick = { onNavigate("open_finance") }
+                    icon = Icons.Default.SwapVert,
+                    label = "Atividades",
+                    isSelected = currentRoute == "activities",
+                    activeColor = IosGreen,
+                    onClick = { onNavigate("activities") }
                 )
 
                 // BOTÃO CENTRAL DO MENU SUSPENSO (+)
@@ -667,17 +781,17 @@ fun IosFloatingDock(
                     icon = Icons.Default.CameraAlt,
                     label = "Cupom",
                     isSelected = currentRoute == "scan_receipt",
-                    activeColor = IosGreen,
+                    activeColor = IosOrange,
                     onClick = { onNavigate("scan_receipt") }
                 )
 
-                // Item 4: IA Gemini
+                // Item 4: Perfil & Recursos
                 IosDockTab(
-                    icon = Icons.Default.AutoAwesome,
-                    label = "IA",
-                    isSelected = currentRoute == "ai_assistant",
+                    icon = Icons.Default.Person,
+                    label = "Perfil",
+                    isSelected = currentRoute == "profile",
                     activeColor = IosPurple,
-                    onClick = { onNavigate("ai_assistant") }
+                    onClick = { onNavigate("profile") }
                 )
             }
         }
@@ -714,4 +828,5 @@ fun IosDockTab(
             color = if (isSelected) activeColor else Color(0xFF8E8E93)
         )
     }
+
 }
