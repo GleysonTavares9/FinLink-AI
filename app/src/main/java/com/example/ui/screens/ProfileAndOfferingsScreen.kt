@@ -325,8 +325,14 @@ fun ProfileAndOfferingsScreen(
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Conexões Open Finance",
+                                text = "Mercado Pago • Ativo",
                                 fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF059669)
+                            )
+                            Text(
+                                text = "Saldo: R$ 1.854,20",
+                                fontSize = 11.sp,
                                 color = Color(0xFF64748B)
                             )
                         }

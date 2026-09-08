@@ -173,6 +173,7 @@ class MainActivity : ComponentActivity() {
                                 DashboardScreen(
                                     expenses = expenses,
                                     totalSpent = totalSpent ?: 0.0,
+                                    connectedAccounts = connectedAccounts,
                                     budgetAnalysis = budgetAnalysis,
                                     authState = authState,
                                     isSyncing = isSyncing,

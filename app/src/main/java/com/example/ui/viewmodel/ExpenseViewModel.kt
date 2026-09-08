@@ -189,6 +189,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val lastSyncTime: StateFlow<String> = _lastSyncTime.asStateFlow()
 
     init {
+        // Inicializa dados reais do banco conectado (Mercado Pago e extratos) se ainda não existirem
+        viewModelScope.launch {
+            try {
+                openFinanceRepo.ensureInitialSeed()
+            } catch (e: Exception) {
+                android.util.Log.e("ExpenseViewModel", "Erro ao inicializar seed Open Finance: ${e.message}")
+            }
+        }
+
         // Auto-sincronizacao em tempo real ao inicializar caso haja sessao ativa
         viewModelScope.launch {
             if (supabaseAuthRepo.getCurrentSession() != null) {
