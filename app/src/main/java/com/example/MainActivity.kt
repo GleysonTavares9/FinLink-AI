@@ -1,5 +1,7 @@
 package com.example
 
+import com.example.ui.components.ExpenseModalBottomSheet
+
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
@@ -85,6 +88,7 @@ import com.example.ui.screens.OpenFinanceScreen
 import com.example.ui.screens.ProfileAndOfferingsScreen
 import com.example.ui.screens.ScanReceiptScreen
 import com.example.ui.screens.SplashScreen
+import com.example.ui.screens.FinancialDashboardScreen
 import com.example.ui.theme.IosBlue
 import com.example.ui.theme.IosGreen
 import com.example.ui.theme.IosIndigo
@@ -138,7 +142,8 @@ class MainActivity : ComponentActivity() {
                 val unifiedTransactions by viewModel.unifiedTransactions.collectAsStateWithLifecycle()
                 val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
 
-                var isSuspendedMenuOpen by remember { mutableStateOf(false) }
+                var showExpenseModal by remember { mutableStateOf(false) }
+                    var isSuspendedMenuOpen by remember { mutableStateOf(false) }
 
                 Box(
                     modifier = Modifier
@@ -174,18 +179,20 @@ class MainActivity : ComponentActivity() {
                                     expenses = expenses,
                                     totalSpent = totalSpent ?: 0.0,
                                     connectedAccounts = connectedAccounts,
+                                    unifiedTransactions = unifiedTransactions,
                                     budgetAnalysis = budgetAnalysis,
                                     authState = authState,
                                     isSyncing = isSyncing,
                                     lastSyncTime = lastSyncTime,
                                     onNavigateToScan = { navController.navigate("scan_receipt") },
-                                    onNavigateToManual = { navController.navigate("manual_input") },
+                                    onNavigateToManual = { showExpenseModal = true },
                                     onNavigateToOpenFinance = { navController.navigate("open_finance") },
                                     onNavigateToAi = { navController.navigate("ai_assistant") },
                                     onNavigateToHousehold = { navController.navigate("household") },
                                     onNavigateToAuth = { navController.navigate("auth") },
                                     onSyncCloud = { viewModel.syncWithCloud() },
-                                    onDeleteExpense = { id -> viewModel.deleteExpense(id) }
+                                    onDeleteExpense = { id -> viewModel.deleteExpense(id) },
+                                    onNavigateToFinancialDashboard = { navController.navigate("financial_dashboard") }
                                 )
                             }
 
@@ -258,6 +265,7 @@ class MainActivity : ComponentActivity() {
                             }
 
                             composable("auth") {
+                                val googleUrl = "${viewModel.supabaseClient.baseUrl}/auth/v1/authorize?provider=google&redirect_to=finlink://auth-callback"
                                 AuthScreen(
                                     authState = authState,
                                     syncResult = syncResult,
@@ -266,12 +274,14 @@ class MainActivity : ComponentActivity() {
                                     onSignUp = { email, pass -> viewModel.signUp(email, pass) },
                                     onSignOut = { viewModel.signOut() },
                                     onSyncWithCloud = { viewModel.syncWithCloud() },
-                        onGoogleSignIn = {
-                            val googleAuthUrl = "${viewModel.supabaseClient.baseUrl}/auth/v1/authorize?provider=google&redirect_to=finlink://auth-callback"
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(googleAuthUrl))
-                            startActivity(intent)
-                        },
-                        onBack = { navController.popBackStack() }
+                                    onGoogleSignIn = {
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(googleUrl))
+                                        startActivity(intent)
+                                    },
+                                    onOAuthCallback = { uri -> viewModel.handleAuthDeepLink(uri) },
+                                    onUpdateProfile = { name, avatar -> viewModel.updateUserProfile(name, avatar) },
+                                    googleAuthUrl = googleUrl,
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
 
@@ -280,20 +290,32 @@ class MainActivity : ComponentActivity() {
                                     transactions = unifiedTransactions,
                                     onNavigateToScan = { navController.navigate("scan_receipt") },
                                     onNavigateToAi = { navController.navigate("ai_assistant") },
-                                    onNavigateToManual = { navController.navigate("manual_input") },
+                                    onNavigateToManual = { showExpenseModal = true },
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable("financial_dashboard") {
+                                FinancialDashboardScreen(
+                                    transactions = unifiedTransactions,
                                     onBack = { navController.popBackStack() }
                                 )
                             }
 
                             composable("profile") {
-                                val email = if (authState is AuthUiState.Authenticated) (authState as AuthUiState.Authenticated).session.user.email ?: "gleyson@finlink.ai" else "gleyson@finlink.ai"
+                                val currentUser = (authState as? AuthUiState.Authenticated)?.session?.user
+                                val email = currentUser?.email ?: "gleyson@finlink.ai"
+                                val fullName = currentUser?.fullName ?: "GLEYSON TAVARES DE MIRANDA"
+                                val avatarUrl = currentUser?.avatarUrl
                                 ProfileAndOfferingsScreen(
-                                    userFullName = "GLEYSON TAVARES DE MIRANDA",
+                                    userFullName = fullName,
                                     userEmail = email,
-                                    connectedBankCount = connectedAccounts.size.coerceAtLeast(1),
+                                    userAvatarUrl = avatarUrl,
+                                    connectedBankCount = connectedAccounts.size,
                                     appOfferings = viewModel.appOfferings,
                                     subscriptions = subscriptions,
                                     onToggleSubscription = { subId -> viewModel.toggleSubscriptionStatus(subId) },
+                                    onUpdateProfile = { name, avatar -> viewModel.updateUserProfile(name, avatar) },
                                     onNavigateToOpenFinance = { navController.navigate("open_finance") },
                                     onSignOut = {
                                         viewModel.signOut()
@@ -308,6 +330,17 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // Scrim suave translúcido para fechar o menu ao tocar fora (sem tela escura)
+                    
+                    if (showExpenseModal) {
+                        ExpenseModalBottomSheet(
+                            onDismissRequest = { showExpenseModal = false },
+                            connectedAccounts = connectedAccounts,
+                            onSaveExpense = { storeName, amount, category, date, paymentMethod, notes ->
+                                viewModel.addManualExpense(storeName, amount, category, date, paymentMethod, notes)
+                            }
+                        )
+                    }
+
                     if (isSuspendedMenuOpen) {
                         Box(
                             modifier = Modifier
@@ -347,7 +380,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onManualExpense = {
                                 isSuspendedMenuOpen = false
-                                navController.navigate("manual_input")
+                                showExpenseModal = true
                             },
                             onOpenFinance = {
                                 isSuspendedMenuOpen = false
@@ -368,11 +401,15 @@ class MainActivity : ComponentActivity() {
                             onAccountAuth = {
                                 isSuspendedMenuOpen = false
                                 navController.navigate("auth")
+                            },
+                            onDashboardKpi = {
+                                isSuspendedMenuOpen = false
+                                navController.navigate("financial_dashboard")
                             }
                         )
                     }
 
-                    // DOCK FLUTUANTE DE NAVEGAÇÃO TRANSLÚCIDO (Floating Glass Bar)
+                    // DOCK FLUTUANTE DE NAVEGAÇíO TRANSLÚCIDO (Floating Glass Bar)
                     if (currentRoute != "splash" && authState is AuthUiState.Authenticated) {
                         Box(
                             modifier = Modifier
@@ -447,182 +484,178 @@ fun IosSuspendedActionMenu(
     onHousehold: () -> Unit,
     onSyncCloud: () -> Unit,
     onAiAssistant: () -> Unit,
-    onAccountAuth: () -> Unit
+    onAccountAuth: () -> Unit,
+    onDashboardKpi: () -> Unit = {}
 ) {
+    val iosCard = Color(0xFFFFFFFF)
+    val iosBorder = Color(0xFFE5E5EA)
+    val iosTextBlack = Color(0xFF1C1C1E)
+    val iosTextGray = Color(0xFF8E8E93)
+    val iosBlue = Color(0xFF007AFF)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(24.dp, RoundedCornerShape(28.dp), spotColor = Color(0x11000000)),
+            .shadow(24.dp, RoundedCornerShape(28.dp), spotColor = Color(0x18000000)),
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        colors = CardDefaults.cardColors(containerColor = Color(0xF8FFFFFF)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0x99FFFFFF),
-                                Color(0x66F4F6FB)
-                        )
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Header Apple
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "FINLINK AI • MENU Rí PIDO",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = iosBlue,
+                        letterSpacing = 0.8.sp
                     )
-                )
-                .border(
-                    width = 1.dp,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White,
-                            Color(0x18000000)
-                        )
-                    ),
-                    shape = RoundedCornerShape(28.dp)
-                )
-                .padding(20.dp)
-        ) {
-            Column {
-                // Header com Badge do Banco de Dados Real Supabase
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "FINLINK AI • MENU SUSPENSO",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = IosBlue,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            text = "Ações Rápidas",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFF1D1D1F)
-                        )
-                    }
+                    Text(
+                        text = "Ações & Atalhos",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Black,
+                        color = iosTextBlack
+                    )
+                }
 
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (isCloudConnected) Color(0xFF34C759).copy(alpha = 0.14f) else Color(0xFFECEEF3)
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFFF2F2F7),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isCloudConnected) Color(0xFF34C759) else IosOrange)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isCloudConnected) "Supabase Nuvem Ativa" else "Banco Local ($realCount)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isCloudConnected) Color(0xFF248A3D) else Color(0xFF1D1D1F),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (isCloudConnected) Color(0xFF34C759) else Color(0xFFFF9500))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isCloudConnected) "Nuvem Sincronizada" else "Local ($realCount)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isCloudConnected) Color(0xFF15803D) else Color(0xFF9A3412),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-                // Grid de Ações Rápidas com ícones iOS coloridos
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    IosMenuItem(
-                        title = "Atividades",
-                        subtitle = "Entradas e Saídas",
-                        icon = Icons.Default.SwapVert,
-                        gradient = listOf(IosGreen, Color(0xFF0F766E)),
-                        onClick = onActivities,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IosMenuItem(
-                        title = "Perfil & Planos",
-                        subtitle = "Seja PRO e Recursos",
-                        icon = Icons.Default.Person,
-                        gradient = listOf(IosPurple, Color(0xFF6D28D9)),
-                        onClick = onProfile,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            // Linha 1: Gráficos Rosca & Atividades
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                IosMenuItem(
+                    title = "Dashboard Rosca",
+                    subtitle = "Gráficos & KPIs",
+                    icon = Icons.Default.PieChart,
+                    iconBg = Color(0xFFEFF6FF),
+                    iconTint = iosBlue,
+                    onClick = onDashboardKpi,
+                    modifier = Modifier.weight(1f)
+                )
+                IosMenuItem(
+                    title = "Atividades",
+                    subtitle = "Entradas & Saídas",
+                    icon = Icons.Default.SwapVert,
+                    iconBg = Color(0xFFF0FDF4),
+                    iconTint = Color(0xFF16A34A),
+                    onClick = onActivities,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    IosMenuItem(
-                        title = "Escanear NFC-e",
-                        subtitle = "Cupom SEFAZ / OCR",
-                        icon = Icons.Default.CameraAlt,
-                        gradient = listOf(IosGreen, Color(0xFF029E60)),
-                        onClick = onScanReceipt,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IosMenuItem(
-                        title = "Lançar Manual",
-                        subtitle = "Novo Gasto no Banco",
-                        icon = Icons.Default.Edit,
-                        gradient = listOf(IosBlue, Color(0xFF0056B3)),
-                        onClick = onManualExpense,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            // Linha 2: Cupom Fiscal & Novo Gasto Manual
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                IosMenuItem(
+                    title = "Escanear NFC-e",
+                    subtitle = "Cupom SEFAZ / OCR",
+                    icon = Icons.Default.CameraAlt,
+                    iconBg = Color(0xFFECFDF5),
+                    iconTint = Color(0xFF059669),
+                    onClick = onScanReceipt,
+                    modifier = Modifier.weight(1f)
+                )
+                IosMenuItem(
+                    title = "Lançar Manual",
+                    subtitle = "Novo Gasto no Banco",
+                    icon = Icons.Default.Edit,
+                    iconBg = Color(0xFFEFF6FF),
+                    iconTint = iosBlue,
+                    onClick = onManualExpense,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    IosMenuItem(
-                        title = "Open Finance",
-                        subtitle = "Contas e Extratos",
-                        icon = Icons.Default.AccountBalance,
-                        gradient = listOf(IosIndigo, Color(0xFF423EA8)),
-                        onClick = onOpenFinance,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IosMenuItem(
-                        title = "Orçamento Família",
-                        subtitle = "Divisão Adulto/Criança",
-                        icon = Icons.Default.FamilyRestroom,
-                        gradient = listOf(IosOrange, Color(0xFFD67200)),
-                        onClick = onHousehold,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            // Linha 3: Open Finance & Orçamento
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                IosMenuItem(
+                    title = "Open Finance",
+                    subtitle = "Contas Bancárias",
+                    icon = Icons.Default.AccountBalance,
+                    iconBg = Color(0xFFEEF2FF),
+                    iconTint = Color(0xFF4F46E5),
+                    onClick = onOpenFinance,
+                    modifier = Modifier.weight(1f)
+                )
+                IosMenuItem(
+                    title = "Orçamento Família",
+                    subtitle = "Gestão e Teto",
+                    icon = Icons.Default.FamilyRestroom,
+                    iconBg = Color(0xFFFFF7ED),
+                    iconTint = Color(0xFFEA580C),
+                    onClick = onHousehold,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    IosMenuItem(
-                        title = "Sincronizar Nuvem",
-                        subtitle = "Supabase Realtime",
-                        icon = Icons.Default.CloudSync,
-                        gradient = listOf(Color(0xFF34C759), Color(0xFF1B8A5A)),
-                        onClick = onSyncCloud,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IosMenuItem(
-                        title = "Assistente IA",
-                        subtitle = "Gemini Advisor",
-                        icon = Icons.Default.AutoAwesome,
-                        gradient = listOf(IosIndigo, Color(0xFF6366F1)),
-                        onClick = onAiAssistant,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            // Linha 4: Nuvem & IA
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                IosMenuItem(
+                    title = "Sincronizar Nuvem",
+                    subtitle = "Supabase Realtime",
+                    icon = Icons.Default.CloudSync,
+                    iconBg = Color(0xFFF0FDF4),
+                    iconTint = Color(0xFF16A34A),
+                    onClick = onSyncCloud,
+                    modifier = Modifier.weight(1f)
+                )
+                IosMenuItem(
+                    title = "Assistente IA",
+                    subtitle = "Gemini Advisor",
+                    icon = Icons.Default.AutoAwesome,
+                    iconBg = Color(0xFFF5F3FF),
+                    iconTint = Color(0xFF7C3AED),
+                    onClick = onAiAssistant,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
@@ -633,18 +666,19 @@ fun IosMenuItem(
     title: String,
     subtitle: String,
     icon: ImageVector,
-    gradient: List<Color>,
+    iconBg: Color,
+    iconTint: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .shadow(4.dp, RoundedCornerShape(18.dp), spotColor = Color(0x10000000)),
-        shape = RoundedCornerShape(18.dp),
-        color = Color(0xFFFFFFFF),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+            .shadow(4.dp, RoundedCornerShape(16.dp), spotColor = Color(0x0A000000)),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E5EA))
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -654,14 +688,14 @@ fun IosMenuItem(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Brush.linearGradient(gradient)),
+                    .background(iconBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = title,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    tint = iconTint,
+                    modifier = Modifier.size(19.dp)
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
@@ -670,12 +704,12 @@ fun IosMenuItem(
                     text = title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
-                    color = Color(0xFF1D1D1F)
+                    color = Color(0xFF1C1C1E)
                 )
                 Text(
                     text = subtitle,
                     fontSize = 10.sp,
-                    color = Color(0xFF86868B),
+                    color = Color(0xFF8E8E93),
                     maxLines = 1
                 )
             }
@@ -684,7 +718,7 @@ fun IosMenuItem(
 }
 
 /**
- * Dock de Navegação Flutuante com Efeito Vidro Translúcido (FinLink Floating Glass Dock).
+ * Dock de Navegação Flutuante Estilo iPhone (Translucent Apple Glass Dock).
  */
 @Composable
 fun IosFloatingDock(
@@ -697,104 +731,81 @@ fun IosFloatingDock(
         targetValue = if (isSuspendedOpen) 45f else 0f,
         label = "plus_rotation"
     )
+    val iosBlue = Color(0xFF007AFF)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(22.dp, RoundedCornerShape(34.dp), spotColor = Color(0x22000000)),
-        shape = RoundedCornerShape(34.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            .shadow(16.dp, RoundedCornerShape(32.dp), spotColor = Color(0x14000000)),
+        shape = RoundedCornerShape(32.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xF4FFFFFF)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E5EA))
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xEEFFFFFF),
-                            Color(0xF4F6F9FD)
-                        )
-                    )
-                )
-                .border(
-                    width = 1.dp,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White,
-                            Color(0x18000000)
-                        )
-                    ),
-                    shape = RoundedCornerShape(34.dp)
-                )
-                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Item 1: Início
-                IosDockTab(
-                    icon = Icons.Default.Home,
-                    label = "Início",
-                    isSelected = currentRoute == "dashboard",
-                    activeColor = IosBlue,
-                    onClick = { onNavigate("dashboard") }
-                )
+            // Item 1: Início
+            IosDockTab(
+                icon = Icons.Default.Home,
+                label = "Início",
+                isSelected = currentRoute == "dashboard",
+                activeColor = iosBlue,
+                onClick = { onNavigate("dashboard") }
+            )
 
-                // Item 2: Atividades (Extrato completo com entradas, saídas e assinaturas)
-                IosDockTab(
-                    icon = Icons.Default.SwapVert,
-                    label = "Atividades",
-                    isSelected = currentRoute == "activities",
-                    activeColor = IosGreen,
-                    onClick = { onNavigate("activities") }
-                )
+            // Item 2: Atividades
+            IosDockTab(
+                icon = Icons.Default.SwapVert,
+                label = "Atividades",
+                isSelected = currentRoute == "activities",
+                activeColor = iosBlue,
+                onClick = { onNavigate("activities") }
+            )
 
-                // BOTÃO CENTRAL DO MENU SUSPENSO (+)
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .shadow(12.dp, CircleShape, spotColor = IosBlue.copy(alpha = 0.4f))
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = if (isSuspendedOpen) listOf(IosRed, Color(0xFFB51A1A))
-                                else listOf(IosBlue, IosGreen)
-                            )
-                        )
-                        .clickable { onToggleSuspended() }
-                        .testTag("btn_suspended_menu"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Menu Suspenso",
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(26.dp)
-                            .rotate(rotation)
+            // BOTíO CENTRAL DO MENU SUSPENSO (+)
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .shadow(8.dp, CircleShape, spotColor = iosBlue.copy(alpha = 0.35f))
+                    .background(
+                        if (isSuspendedOpen) Color(0xFFFF3B30) else iosBlue
                     )
-                }
-
-                // Item 3: Cupom AI
-                IosDockTab(
-                    icon = Icons.Default.CameraAlt,
-                    label = "Cupom",
-                    isSelected = currentRoute == "scan_receipt",
-                    activeColor = IosOrange,
-                    onClick = { onNavigate("scan_receipt") }
-                )
-
-                // Item 4: Perfil & Recursos
-                IosDockTab(
-                    icon = Icons.Default.Person,
-                    label = "Perfil",
-                    isSelected = currentRoute == "profile",
-                    activeColor = IosPurple,
-                    onClick = { onNavigate("profile") }
+                    .clickable { onToggleSuspended() }
+                    .testTag("btn_suspended_menu"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Menu Suspenso",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .rotate(rotation)
                 )
             }
+
+            // Item 3: Cupom AI
+            IosDockTab(
+                icon = Icons.Default.CameraAlt,
+                label = "Cupom",
+                isSelected = currentRoute == "scan_receipt",
+                activeColor = iosBlue,
+                onClick = { onNavigate("scan_receipt") }
+            )
+
+            // Item 4: Perfil & Recursos
+            IosDockTab(
+                icon = Icons.Default.Person,
+                label = "Perfil",
+                isSelected = currentRoute == "profile",
+                activeColor = iosBlue,
+                onClick = { onNavigate("profile") }
+            )
         }
     }
 }
@@ -829,5 +840,4 @@ fun IosDockTab(
             color = if (isSelected) activeColor else Color(0xFF8E8E93)
         )
     }
-
 }

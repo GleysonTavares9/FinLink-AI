@@ -9,6 +9,8 @@ import com.example.domain.model.HouseholdProfile
 data class SupabaseUser(
     val id: String,
     val email: String,
+    val fullName: String = "",
+    val avatarUrl: String = "",
     val createdAt: String = ""
 )
 

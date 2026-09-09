@@ -690,7 +690,7 @@ fun ScanReceiptScreen(
                             editableItems.addAll(res.items)
                         }
 
-                        // FORMULÁRIO DE REVISÃO E CONFIRMAÇÃO EM MOEDA BRASILEIRA (R$)
+                        // FORMULÁRIO DE REVISíO E CONFIRMAÇíO EM MOEDA BRASILEIRA (R$)
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(22.dp),

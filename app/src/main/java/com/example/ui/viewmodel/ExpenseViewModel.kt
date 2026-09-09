@@ -492,6 +492,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateUserProfile(name: String, avatarUrl: String, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val res = supabaseAuthRepo.updateUserProfile(name, avatarUrl)
+            onDone(res.isSuccess)
+        }
+    }
+
     fun syncWithCloud() {
         viewModelScope.launch {
             _isSyncing.value = true

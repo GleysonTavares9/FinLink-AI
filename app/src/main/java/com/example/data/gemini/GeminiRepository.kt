@@ -219,7 +219,7 @@ class GeminiRepository {
                 paymentMethod = "Cartão de Crédito",
                 items = emptyList(),
                 rawText = jsonText,
-                confidence = "REVISÃO NECESSÁRIA"
+                confidence = "REVISíO NECESSÁRIA"
             )
         }
     }

@@ -136,7 +136,24 @@ serve(async (req) => {
         });
       }
 
-      // Caso itemId seja "sync_all" ou omitido, retorna os dados gravados no Supabase
+      // Se itemId for "sync_all" ou omitido, sincroniza todos os items reais ativos da Pluggy
+      try {
+        const itemsRes = await fetch("https://api.pluggy.ai/items", {
+          headers: { "X-API-KEY": apiKey },
+        });
+        if (itemsRes.ok) {
+          const itemsData = await itemsRes.json();
+          const itemsList = itemsData.results || [];
+          console.log(`[Sync All] Itens encontrados na Pluggy: ${itemsList.length}`);
+          for (const it of itemsList) {
+            await syncPluggyItem(it.id, apiKey, supabase, userId);
+          }
+        }
+      } catch (e) {
+        console.error("[Sync All] Erro ao sincronizar itens da Pluggy:", e);
+      }
+
+      // Retorna os dados gravados no Supabase
       const { data: dbAccounts } = await supabase
         .from("open_finance_accounts")
         .select("*")
@@ -220,58 +237,65 @@ async function syncPluggyItem(itemId: string, apiKey: string, supabase: any, use
 
     // 3. Buscar transações reais da conta na Pluggy
     try {
-      const txRes = await fetch(`https://api.pluggy.ai/transactions?accountId=${acc.id}&pageSize=100`, {
-        headers: { "X-API-KEY": apiKey },
-      });
-      const txData = await txRes.json();
-      const txList = txData.results || [];
+      // API v2 com cursor pagination (endpoint /transactions depreciado - HTTP 410)
+      let cursor = undefined;
+      let txList = [];
+      let fetchPage = 0;
+      do {
+        const txUrl = cursor
+          ? `https://api.pluggy.ai/v2/transactions?accountId=${acc.id}&cursor=${cursor}`
+          : `https://api.pluggy.ai/v2/transactions?accountId=${acc.id}`;
+        const txPageRes = await fetch(txUrl, {
+          headers: { "X-API-KEY": apiKey },
+        });
+        if (!txPageRes.ok) {
+          console.error(`[Pluggy v2] Erro HTTP ${txPageRes.status} ao buscar transacoes da conta ${acc.id}`);
+          break;
+        }
+        const txData = await txPageRes.json();
+        const page = txData.results || [];
+        txList = txList.concat(page);
+        cursor = txData.nextCursor || undefined;
+        fetchPage++;
+        if (fetchPage >= 5) break; // max ~500 transacoes por conta
+      } while (cursor);
+      console.log(`[Pluggy v2] Conta ${acc.id}: ${txList.length} transacoes encontradas`);
 
-      for (const tx of txList) {
-        const txPayload = {
+            // Preparar payloads em batch para upsert eficiente
+      const txPayloads = txList.map((tx: any) => {
+        const rawAmt = tx.amount || 0;
+        // Pluggy v2: se type for CREDIT ou categoria indicar receita -> CREDIT
+        const isCredit = tx.type === "CREDIT" || (!tx.type && rawAmt > 0);
+        return {
           id: tx.id,
           user_id: userId,
           account_id: acc.id,
           description: tx.description || "Transação Bancária",
-          amount: tx.amount || 0,
+          amount: Math.abs(rawAmt),
+          payment_type: isCredit ? "CREDIT" : "DEBIT",
           transaction_date: tx.date ? tx.date.split("T")[0] : new Date().toISOString().split("T")[0],
           category: tx.category || "Outros",
-          payment_type: tx.type || "OUTROS",
           created_at: new Date().toISOString(),
         };
+      });
 
+      // Upsert em batch de 100 registros (muito mais rápido que um por vez)
+      const BATCH_SIZE = 100;
+      for (let b = 0; b < txPayloads.length; b += BATCH_SIZE) {
+        const batch = txPayloads.slice(b, b + BATCH_SIZE);
         try {
           await supabase
             .from("open_finance_transactions")
-            .upsert(txPayload, { onConflict: "id" });
+            .upsert(batch, { onConflict: "id" });
         } catch (e) {
-          console.error("Erro ao fazer upsert na transação:", e);
-        }
-        allTransactions.push(txPayload);
-
-        // Se for débito/despesa, registrar também na tabela unificada de despesas
-        const isExpense = (tx.amount && tx.amount < 0) || tx.type === "DEBIT";
-        const absAmount = Math.abs(tx.amount || 0);
-
-        if (isExpense && absAmount > 0) {
-          try {
-            await supabase.from("expenses").upsert({
-              id: tx.id,
-              user_id: userId,
-              store_name: tx.description || "Transação Bancária",
-              total_amount: absAmount,
-              category: tx.category || "Outros",
-              payment_method: "OPEN_FINANCE",
-              transaction_date: tx.date ? tx.date.split("T")[0] : new Date().toISOString().split("T")[0],
-              raw_ocr_text: `Importado via Open Finance (${item?.connector?.name || "Banco"})`,
-              is_manual: false,
-              source: "OPEN_FINANCE",
-              notes: `Conta: ${acc.name || "Bancária"} | ID: ${tx.id}`,
-              created_at: new Date().toISOString(),
-            }, { onConflict: "id" });
-          } catch (_) {}
+          console.error(`[Batch] Erro ao upsert batch ${b}-${b + BATCH_SIZE}:`, e);
         }
       }
-    } catch (txErr) {
+      allTransactions.push(...txPayloads);
+
+      // Não duplicar em "expenses" - o app lê diretamente de open_finance_transactions com o campo type
+      console.log(`[Batch] ${txPayloads.length} transações salvas para conta ${acc.id}`);
+      } catch (txErr) {
       console.error(`Erro ao buscar transações da conta ${acc.id}:`, txErr);
     }
   }

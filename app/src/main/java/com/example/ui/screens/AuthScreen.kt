@@ -1,6 +1,13 @@
 package com.example.ui.screens
 
+import android.graphics.Bitmap
+import android.net.Uri
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,7 +31,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Email
@@ -60,9 +70,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,11 +80,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import com.example.data.remote.supabase.AuthUiState
 import com.example.data.remote.supabase.SyncResult
 import com.example.ui.theme.IosBlue
 import com.example.ui.theme.IosGreen
-import com.example.ui.theme.IosPurple
+import com.example.ui.theme.IosOrange
 import com.example.ui.theme.IosRed
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +103,9 @@ fun AuthScreen(
     onSyncWithCloud: () -> Unit,
     onContinueAsGuest: () -> Unit = {},
     onGoogleSignIn: () -> Unit = {},
+    onOAuthCallback: (Uri) -> Unit = {},
+    onUpdateProfile: (name: String, avatarUrl: String) -> Unit = { _, _ -> },
+    googleAuthUrl: String = "",
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -96,574 +113,466 @@ fun AuthScreen(
     var emailInput by remember { mutableStateOf("") }
     var passwordInput by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
+    var showGoogleLoginDialog by remember { mutableStateOf(false) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF3F5FA))
-    ) {
-        // Fundo Aurora Multicolorido Suave
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF10B981).copy(alpha = 0.12f), Color.Transparent),
-                    center = Offset(size.width * 0.90f, size.height * 0.10f),
-                    radius = size.width * 0.65f
+    // Diálogo in-app para Login com Google (intercepta localhost e deep-link sem falha de conexão)
+    if (showGoogleLoginDialog && googleAuthUrl.isNotBlank()) {
+        Dialog(
+            onDismissRequest = { showGoogleLoginDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Entrar com Google", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                        navigationIcon = {
+                            IconButton(onClick = { showGoogleLoginDialog = false }) {
+                                Icon(Icons.Default.Close, contentDescription = "Fechar")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                    )
+                }
+            ) { padding ->
+                AndroidView(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.userAgentString = settings.userAgentString + " FinLinkApp/1.0"
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                    val url = request?.url?.toString() ?: return false
+                                    if (url.startsWith("finlink://auth-callback") || url.contains("localhost:3000/#access_token=") || url.contains("#access_token=")) {
+                                        showGoogleLoginDialog = false
+                                        onOAuthCallback(request.url)
+                                        return true
+                                    }
+                                    return false
+                                }
+
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                    super.onPageStarted(view, url, favicon)
+                                    if (url != null && (url.startsWith("finlink://auth-callback") || url.contains("localhost:3000/#access_token=") || url.contains("#access_token="))) {
+                                        showGoogleLoginDialog = false
+                                        onOAuthCallback(Uri.parse(url))
+                                    }
+                                }
+                            }
+                            loadUrl(googleAuthUrl)
+                        }
+                    }
                 )
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF0EA5E9).copy(alpha = 0.10f), Color.Transparent),
-                    center = Offset(size.width * 0.10f, size.height * 0.35f),
-                    radius = size.width * 0.55f
-                )
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        if (authState is AuthUiState.Authenticated) "Perfil do Usuário" else "Conta & Sincronização",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
-
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "Conta Sincronizada",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color(0xFF1D1D1F)
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = IosBlue)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color(0xFFF8FAFC), Color(0xFFF1F5F9))
+                    )
                 )
-            },
-            containerColor = Color.Transparent
-        ) { padding ->
+                .padding(paddingValues)
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                // Header Glass Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(12.dp, RoundedCornerShape(24.dp), spotColor = Color(0x10000000)),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xEEFFFFFF))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, Brush.verticalGradient(listOf(Color.White, Color(0x20000000))), RoundedCornerShape(24.dp))
-                            .padding(20.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(Color(0xFF10B981), Color(0xFF059669))
-                                        )
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Shield, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
-                            }
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column {
-                                Text(
-                                    "Criptografia de Ponta a Ponta",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 17.sp,
-                                    color = Color(0xFF1D1D1F)
-                                )
-                                Text(
-                                    "PostgreSQL com Row Level Security (RLS)",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF6B7280)
-                                )
-                            }
-                        }
-                    }
-                }
 
+                // ==========================================================
+                // CASO 1: USUÁRIO JÁ AUTENTICADO (PERFIL COMPLETO REAL)
+                // ==========================================================
                 if (authState is AuthUiState.Authenticated) {
                     val session = authState.session
                     val user = session.user
 
-                    // Perfil Autenticado Glass Card
+                    var editName by remember(user.fullName) {
+                        mutableStateOf(user.fullName.ifBlank { "Usuário FinLink" })
+                    }
+                    var userAvatarUrl by remember(user.avatarUrl) {
+                        mutableStateOf(user.avatarUrl)
+                    }
+
+                    // Seletor de Foto nativo da galeria
+                    val photoPickerLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri: Uri? ->
+                        if (uri != null) {
+                            userAvatarUrl = uri.toString()
+                            onUpdateProfile(editName, uri.toString())
+                            Toast.makeText(context, "Foto de perfil atualizada!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    // Card Elegante de Perfil
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(14.dp, RoundedCornerShape(24.dp), spotColor = Color(0x12000000)),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xF4FFFFFF))
+                            .shadow(16.dp, RoundedCornerShape(26.dp), spotColor = Color(0x15000000)),
+                        shape = RoundedCornerShape(26.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = CardDefaults.outlinedCardBorder()
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, Brush.verticalGradient(listOf(Color.White, Color(0x1E000000))), RoundedCornerShape(24.dp))
-                                .padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
-                            Text(
-                                "Meu Perfil",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                color = Color(0xFF1D1D1F)
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            // FOTO DE PERFIL COM BOTíO DE TROCA
+                            Box(
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .clip(CircleShape)
+                                    .clickable { photoPickerLauncher.launch("image/*") }
+                            ) {
+                                if (userAvatarUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = userAvatarUrl,
+                                        contentDescription = "Foto de Perfil",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(Color(0xFF4F46E5), Color(0xFF7C3AED))
+                                                )
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = editName.take(1).uppercase(),
+                                            color = Color.White,
+                                            fontSize = 36.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+                                }
+
+                                // Overlay para trocar foto
                                 Box(
                                     modifier = Modifier
-                                        .size(64.dp)
+                                        .size(32.dp)
+                                        .align(Alignment.BottomEnd)
                                         .clip(CircleShape)
-                                        .background(Brush.linearGradient(listOf(Color(0xFF34C759), Color(0xFF10B981)))),
+                                        .background(IosBlue)
+                                        .border(2.dp, Color.White, CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    val initial = if (user.email.isNotBlank()) user.email.take(1).uppercase() else "U"
-                                    Text(initial, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column {
-                                    Text(
-                                        user.email.ifBlank { "Usuário (Sessão Local)" },
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 18.sp,
-                                        color = Color(0xFF1D1D1F)
-                                    )
-                                    Text(
-                                        "Status: Conta Logada ✅",
-                                        fontSize = 14.sp,
-                                        color = Color(0xFF34C759),
-                                        fontWeight = FontWeight.Medium
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = "Alterar Foto",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
 
-                            // Security Pill
+                            Text(
+                                text = "Toque na foto para alterar",
+                                fontSize = 11.sp,
+                                color = Color(0xFF64748B),
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            // CAMPO: NOME COMPLETO (EDITÁVEL)
+                            OutlinedTextField(
+                                value = editName,
+                                onValueChange = { editName = it },
+                                label = { Text("Nome Completo") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Person, contentDescription = null, tint = IosBlue)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = IosBlue,
+                                    unfocusedBorderColor = Color(0xFFE2E8F0)
+                                )
+                            )
+
+                            // CAMPO: E-MAIL (ESTRITAMENTE DESABILITADO / NíO EDITÁVEL)
+                            OutlinedTextField(
+                                value = user.email.ifBlank { "Conta Google Conectada" },
+                                onValueChange = {},
+                                enabled = false,
+                                label = { Text("E-mail (Protegido)") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8))
+                                },
+                                supportingText = {
+                                    Text("O e-mail da sua conta Google não pode ser alterado.", fontSize = 11.sp, color = Color(0xFF64748B))
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    disabledBorderColor = Color(0xFFE2E8F0),
+                                    disabledTextColor = Color(0xFF334155),
+                                    disabledLabelColor = Color(0xFF64748B),
+                                    disabledContainerColor = Color(0xFFF8FAFC)
+                                )
+                            )
+
+                            // BOTíO: SALVAR ALTERAÇÕES NO PERFIL
+                            Button(
+                                onClick = {
+                                    onUpdateProfile(editName, userAvatarUrl)
+                                    Toast.makeText(context, "Perfil atualizado com sucesso!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Salvar Nome e Foto", fontWeight = FontWeight.Bold)
+                            }
+
+                            // BADGE DE CONEXíO ATIVA
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = IosGreen.copy(alpha = 0.12f)
+                                color = IosGreen.copy(alpha = 0.12f),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        "Isolamento Ativo: Row Level Security (RLS)",
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF15803D),
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text("Autenticação Segura Google", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF15803D))
+                                        Text("Seus dados estão protegidos com criptografia ponta a ponta.", fontSize = 11.sp, color = Color(0xFF166534))
+                                    }
                                 }
                             }
 
-                            // Sincronizar Nuvem
+                            // BOTíO SINCRONIZAR DADOS
                             Button(
                                 onClick = onSyncWithCloud,
                                 enabled = !isSyncing,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(50.dp),
+                                    .height(48.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A))
                             ) {
                                 if (isSyncing) {
-                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text("Sincronizando...", fontWeight = FontWeight.Bold)
-                                } else {
-                                    Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Sincronizar Dados", fontWeight = FontWeight.Bold)
+                                    Text("Sincronizando...", color = Color.White)
+                                } else {
+                                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = Color.White)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Sincronizar Dados na Nuvem", fontWeight = FontWeight.Bold)
                                 }
                             }
 
+                            // RESULTADO DA SINCRONIZAÇíO
                             syncResult?.let { res ->
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
-                                    color = if (res.isSuccess) IosGreen.copy(alpha = 0.12f) else IosRed.copy(alpha = 0.12f)
+                                    color = if (res.isSuccess) Color(0xFFF0FDF4) else Color(0xFFFEF2F2),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (res.isSuccess) Color(0xFFBBF7D0) else Color(0xFFFECACA)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
+                                        modifier = Modifier.padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Icon(
-                                            if (res.isSuccess) Icons.Default.CloudDone else Icons.Default.Security,
+                                            if (res.isSuccess) Icons.Default.CloudDone else Icons.Default.Shield,
                                             contentDescription = null,
-                                            tint = if (res.isSuccess) Color(0xFF15803D) else IosRed,
-                                            modifier = Modifier.size(18.dp)
+                                            tint = if (res.isSuccess) Color(0xFF16A34A) else Color(0xFFDC2626)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            res.message,
+                                            text = if (res.isSuccess) "Nuvem atualizada: ${res.uploadedExpenses} enviados, ${res.downloadedExpenses} recebidos." else "Erro: ${res.message}",
                                             fontSize = 12.sp,
-                                            color = if (res.isSuccess) Color(0xFF15803D) else IosRed,
-                                            fontWeight = FontWeight.SemiBold
+                                            color = if (res.isSuccess) Color(0xFF15803D) else Color(0xFF991B1B)
                                         )
                                     }
                                 }
                             }
 
-                            Button(
-                                onClick = onContinueAsGuest,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
-                            ) {
-                                Text("Acessar Painel Financeiro", fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-
+                            // BOTíO DESCONECTAR / LOGOUT
                             OutlinedButton(
                                 onClick = onSignOut,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, IosRed)
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = IosRed)
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = IosRed, modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Sair da Conta (Logout)", color = IosRed, fontWeight = FontWeight.Bold)
+                                Text("Sair da Conta", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
-                } else {
-                    // Auth Form Card (Sign In / Sign Up)
+                }
+
+                // ==========================================================
+                // CASO 2: USUÁRIO NíO AUTENTICADO (FORMULÁRIO & GOOGLE LOGIN)
+                // ==========================================================
+                if (authState !is AuthUiState.Authenticated) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(14.dp, RoundedCornerShape(24.dp), spotColor = Color(0x12000000)),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xF4FFFFFF))
+                            .shadow(16.dp, RoundedCornerShape(26.dp), spotColor = Color(0x15000000)),
+                        shape = RoundedCornerShape(26.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = CardDefaults.outlinedCardBorder()
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, Brush.verticalGradient(listOf(Color.White, Color(0x1E000000))), RoundedCornerShape(24.dp))
-                                .padding(20.dp),
+                                .padding(24.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            // Toggle Login / Cadastro
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
-                                    .padding(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (!isSignUpMode) Color.White else Color.Transparent)
-                                        .clickable { isSignUpMode = false }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        "Fazer Login",
-                                        fontWeight = if (!isSignUpMode) FontWeight.Bold else FontWeight.Normal,
-                                        fontSize = 13.sp,
-                                        color = if (!isSignUpMode) IosBlue else Color(0xFF6B7280)
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isSignUpMode) Color.White else Color.Transparent)
-                                        .clickable { isSignUpMode = true }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        "Cadastrar Conta",
-                                        fontWeight = if (isSignUpMode) FontWeight.Bold else FontWeight.Normal,
-                                        fontSize = 13.sp,
-                                        color = if (isSignUpMode) Color(0xFF10B981) else Color(0xFF6B7280)
-                                    )
-                                }
-                            }
-
                             Text(
-                                if (isSignUpMode) "Crie sua conta segura para backup" else "Acesse suas despesas sincronizadas",
+                                text = if (isSignUpMode) "Criar Nova Conta" else "Acessar sua Conta",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = Color(0xFF1D1D1F)
+                                fontSize = 20.sp,
+                                color = Color(0xFF0F172A)
+                            )
+                            Text(
+                                text = "Sincronize seus gastos, extratos e orçamento familiar em todos os seus dispositivos.",
+                                fontSize = 13.sp,
+                                color = Color(0xFF64748B)
                             )
 
-                            // Email Field
+                            // BOTíO: ENTRAR COM O GOOGLE
+                            Button(
+                                onClick = {
+                                    if (googleAuthUrl.isNotBlank()) {
+                                        showGoogleLoginDialog = true
+                                    } else {
+                                        onGoogleSignIn()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B))
+                            ) {
+                                Canvas(modifier = Modifier.size(20.dp)) {
+                                    drawCircle(color = Color.White)
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text("Continuar com o Google", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
+                                Text("  OU  ", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold)
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
+                            }
+
                             OutlinedTextField(
                                 value = emailInput,
                                 onValueChange = { emailInput = it },
                                 label = { Text("E-mail") },
-                                placeholder = { Text("seu@email.com") },
                                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = IosBlue) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = IosBlue,
-                                    unfocusedBorderColor = Color(0xFFD1D5DB),
-                                    focusedTextColor = Color(0xFF1D1D1F),
-                                    unfocusedTextColor = Color(0xFF1D1D1F)
-                                ),
-                                singleLine = true
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                             )
 
-                            // Password Field
                             OutlinedTextField(
                                 value = passwordInput,
                                 onValueChange = { passwordInput = it },
                                 label = { Text("Senha") },
-                                placeholder = { Text("Mínimo 6 caracteres") },
                                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = IosBlue) },
                                 trailingIcon = {
                                     IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
                                         Icon(
                                             if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = "Alternar visibilidade"
+                                            contentDescription = null
                                         )
                                     }
                                 },
                                 visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = IosBlue,
-                                    unfocusedBorderColor = Color(0xFFD1D5DB),
-                                    focusedTextColor = Color(0xFF1D1D1F),
-                                    unfocusedTextColor = Color(0xFF1D1D1F)
-                                ),
-                                singleLine = true
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                             )
-
-                            if (authState is AuthUiState.Error) {
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = IosRed.copy(alpha = 0.12f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        "⚠️ ${authState.message}",
-                                        color = IosRed,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(10.dp)
-                                    )
-                                }
-                            }
 
                             Button(
                                 onClick = {
-                                    if (emailInput.isBlank() || !emailInput.contains("@")) {
-                                        Toast.makeText(context, "Insira um e-mail válido", Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-                                    if (passwordInput.length < 6) {
-                                        Toast.makeText(context, "A senha deve conter no mínimo 6 caracteres", Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-
-                                    if (isSignUpMode) {
-                                        onSignUp(emailInput.trim(), passwordInput)
+                                    if (emailInput.isNotBlank() && passwordInput.isNotBlank()) {
+                                        if (isSignUpMode) onSignUp(emailInput.trim(), passwordInput)
+                                        else onSignIn(emailInput.trim(), passwordInput)
                                     } else {
-                                        onSignIn(emailInput.trim(), passwordInput)
+                                        Toast.makeText(context, "Preencha todos os campos", Toast.LENGTH_SHORT).show()
                                     }
                                 },
-                                enabled = authState !is AuthUiState.Loading,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(50.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSignUpMode) Color(0xFF10B981) else IosBlue
-                                )
+                                colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
                             ) {
-                                if (authState is AuthUiState.Loading) {
-                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Text(
-                                        if (isSignUpMode) "Cadastrar Conta Segura" else "Entrar na Conta",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = Color.White
-                                    )
-                                }
+                                Text(if (isSignUpMode) "Cadastrar Conta" else "Entrar com E-mail", fontWeight = FontWeight.Bold)
                             }
 
-                            // Divisor OU
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(1.dp)
-                                        .background(Color(0xFFE5E7EB))
-                                )
-                                Text(
-                                    "OU",
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF9CA3AF)
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(1.dp)
-                                        .background(Color(0xFFE5E7EB))
-                                )
-                            }
-
-                            // Botão Entrar com Google
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp)
-                                    .clickable { onGoogleSignIn() },
-                                shape = RoundedCornerShape(14.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    GoogleIcon(modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        "Continuar com o Google",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = Color(0xFF374151)
-                                    )
-                                }
-                            }
-
-                            // Botão Acessar sem Login (Modo Local Offline)
                             OutlinedButton(
-                                onClick = onContinueAsGuest,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
+                                onClick = { isSignUpMode = !isSignUpMode },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
                             ) {
                                 Text(
-                                    "Acessar sem Login (Modo Local Offline)",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF4B5563)
+                                    if (isSignUpMode) "Já possui conta? Fazer Login" else "Não tem conta? Cadastre-se",
+                                    color = IosBlue,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
-                        }
-                    }
-
-                    // Security Explanation Card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(10.dp, RoundedCornerShape(24.dp), spotColor = Color(0x10000000)),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xF4FFFFFF))
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, Brush.verticalGradient(listOf(Color.White, Color(0x1E000000))), RoundedCornerShape(24.dp))
-                                .padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Security, contentDescription = null, tint = IosPurple, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Por que suas informações estão seguras?", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF1D1D1F))
-                            }
-
-                            Text(
-                                "• Criptografia em Trânsito: Todas as conexões utilizam HTTPS/TLS 1.3 obrigatório.\n" +
-                                        "• Row Level Security (RLS): Políticas nativas no banco PostgreSQL garantem que somente você pode visualizar ou alterar suas despesas.\n" +
-                                        "• Autonomia Offline: Você pode continuar lançando despesas sem internet; tudo é sincronizado quando estiver online.",
-                                fontSize = 12.sp,
-                                color = Color(0xFF4B5563),
-                                lineHeight = 18.sp
-                            )
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(100.dp))
             }
         }
-    }
-}
-
-@Composable
-fun GoogleIcon(modifier: Modifier = Modifier.size(20.dp)) {
-    Canvas(modifier = modifier) {
-        val strokeWidth = size.width * 0.20f
-        val center = Offset(size.width / 2f, size.height / 2f)
-
-        // Arco Vermelho (topo)
-        drawArc(
-            color = Color(0xFFEA4335),
-            startAngle = 180f,
-            sweepAngle = 90f,
-            useCenter = false,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth)
-        )
-        // Arco Amarelo (inferior esquerdo)
-        drawArc(
-            color = Color(0xFFFBBC05),
-            startAngle = 90f,
-            sweepAngle = 90f,
-            useCenter = false,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth)
-        )
-        // Arco Verde (inferior direito)
-        drawArc(
-            color = Color(0xFF34A853),
-            startAngle = 0f,
-            sweepAngle = 90f,
-            useCenter = false,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth)
-        )
-        // Arco Azul (superior direito)
-        drawArc(
-            color = Color(0xFF4285F4),
-            startAngle = 270f,
-            sweepAngle = 45f,
-            useCenter = false,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(strokeWidth)
-        )
-        // Barra Azul central
-        drawLine(
-            color = Color(0xFF4285F4),
-            start = Offset(center.x, center.y),
-            end = Offset(size.width - strokeWidth / 4f, center.y),
-            strokeWidth = strokeWidth
-        )
     }
 }

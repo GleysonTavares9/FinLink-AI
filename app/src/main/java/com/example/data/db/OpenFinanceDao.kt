@@ -35,4 +35,6 @@ interface OpenFinanceDao {
 
     @Query("UPDATE open_finance_transactions SET isSyncedToExpenses = 1 WHERE id = :id")
     suspend fun markTransactionSynced(id: String)
+    @Query("DELETE FROM open_finance_accounts WHERE bankName LIKE '%MeuPluggy%' OR bankName LIKE '%Sandbox%' OR id = 'mp_primary_001'")
+    suspend fun cleanLegacyMockAccounts()
 }

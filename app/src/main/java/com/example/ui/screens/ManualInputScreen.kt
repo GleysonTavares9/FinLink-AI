@@ -170,7 +170,7 @@ fun ManualInputScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "VALOR DA TRANSAÇÃO",
+                                text = "VALOR DA TRANSAÇíO",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFF64748B),
                                 fontWeight = FontWeight.ExtraBold,

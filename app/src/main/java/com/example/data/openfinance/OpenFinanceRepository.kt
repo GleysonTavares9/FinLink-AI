@@ -61,84 +61,17 @@ class OpenFinanceRepository(
      * sempre presentes no SQLite local e prontos para consulta no Open Finance.
      */
     suspend fun ensureInitialSeed() = withContext(Dispatchers.IO) {
-        val existing = openFinanceDao.getAccountById("mp_primary_001")
-        if (existing == null) {
-            val mpAccount = OpenFinanceAccountEntity(
-                id = "mp_primary_001",
-                bankName = "Mercado Pago",
-                accountType = "Conta Corrente & Investimentos",
-                accountNumber = "Ag 0001 • CC 482910-3",
-                balance = 1854.20,
-                connectedAt = System.currentTimeMillis() - 86400000L * 15,
-                status = "CONECTADO",
-                lastSync = System.currentTimeMillis()
-            )
-            openFinanceDao.insertAccount(mpAccount)
-
-            val seedTxs = listOf(
-                OpenFinanceTransactionEntity(
-                    id = "of_mp_1",
-                    accountId = "mp_primary_001",
-                    description = "Reserva por gastos Emergência",
-                    amount = 1.00,
-                    date = "2026-09-07",
-                    category = "Transferência - Mesma inst..",
-                    isSyncedToExpenses = true
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "of_mp_2",
-                    accountId = "mp_primary_001",
-                    description = "Reserva por gastos Poupança",
-                    amount = 1.00,
-                    date = "2026-09-07",
-                    category = "Transferência - Mesma inst..",
-                    isSyncedToExpenses = true
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "of_mp_3",
-                    accountId = "mp_primary_001",
-                    description = "Pagamento Drogaria e perfumaria",
-                    amount = 12.99,
-                    date = "2026-09-07",
-                    category = "Drogaria e perfumaria",
-                    isSyncedToExpenses = true
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "of_mp_4",
-                    accountId = "mp_primary_001",
-                    description = "NETFLIX ENTRETENIMENTO",
-                    amount = 20.90,
-                    date = "2026-09-07",
-                    category = "Serviços digitais",
-                    isSyncedToExpenses = true
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "of_mp_5",
-                    accountId = "mp_primary_001",
-                    description = "Pagamento com Código QR PIX",
-                    amount = 18.81,
-                    date = "2026-09-07",
-                    category = "Transferência - PIX",
-                    isSyncedToExpenses = true
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "of_mp_6",
-                    accountId = "mp_primary_001",
-                    description = "Depósito Salário Mensal",
-                    amount = 4850.00,
-                    date = "2026-09-05",
-                    category = "Depósito em Conta",
-                    isSyncedToExpenses = true
-                )
-            )
-            openFinanceDao.insertTransactions(seedTxs)
-            Log.d("OpenFinance", "Conta Mercado Pago e transações reais inicializadas com sucesso!")
+        // Limpa quaisquer dados mockados anteriores para garantir fidelidade aos dados reais
+        val fakeAccount = openFinanceDao.getAccountById("mp_primary_001")
+        if (fakeAccount != null) {
+            openFinanceDao.deleteAccountById("mp_primary_001")
+            openFinanceDao.deleteTransactionsForAccount("mp_primary_001")
+            Log.d("OpenFinance", "Conta mockada removida. Sistema pronto para dados reais.")
         }
+        // Sincroniza contas reais existentes na nuvem
+        syncFromPluggy("sync_all")
     }
 
-    /**
-     * Obtém o Connect Token seguro gerado no Supabase para abrir o widget Pluggy Connect.
-     */
     suspend fun fetchPluggyConnectToken(): String? = withContext(Dispatchers.IO) {
         supabaseClient?.let { sb ->
             try {
@@ -174,6 +107,10 @@ class OpenFinanceRepository(
      * e salva no SQLite local (Room) e no Supabase.
      */
     suspend fun syncFromPluggy(itemId: String): Int = withContext(Dispatchers.IO) {
+        try {
+            openFinanceDao.cleanLegacyMockAccounts()
+        } catch (_: Exception) {}
+
         var syncedCount = 0
 
         var accountsJson: JSONArray? = null
@@ -214,29 +151,51 @@ class OpenFinanceRepository(
             }
         }
 
-        // 2. Fallback: Se não retornou contas da Pluggy, buscar contas gravadas no Supabase REST
-        if ((accountsJson == null || accountsJson.length() == 0) && supabaseClient != null) {
-            try {
-                val restUrl = "${supabaseClient.baseUrl}/rest/v1/open_finance_accounts?select=*"
-                val req = Request.Builder()
-                    .url(restUrl)
-                    .addHeader("apikey", supabaseClient.anonKey)
-                    .addHeader("Authorization", "Bearer ${supabaseClient.anonKey}")
-                    .get()
-                    .build()
-                val resp = httpClient.newCall(req).execute()
-                if (resp.isSuccessful) {
-                    val raw = resp.body?.string() ?: "[]"
-                    val parsed = JSONArray(raw)
-                    if (parsed.length() > 0) {
-                        accountsJson = parsed
+        // 2. Fallback: Se não retornou contas ou transações da Pluggy, buscar do Supabase REST
+        if (supabaseClient != null) {
+            if (accountsJson == null || accountsJson.length() == 0) {
+                try {
+                    val restUrl = "${supabaseClient.baseUrl}/rest/v1/open_finance_accounts?select=*"
+                    val req = Request.Builder()
+                        .url(restUrl)
+                        .addHeader("apikey", supabaseClient.anonKey)
+                        .addHeader("Authorization", "Bearer ${supabaseClient.anonKey}")
+                        .get()
+                        .build()
+                    val resp = httpClient.newCall(req).execute()
+                    if (resp.isSuccessful) {
+                        val raw = resp.body?.string() ?: "[]"
+                        val parsed = JSONArray(raw)
+                        if (parsed.length() > 0) accountsJson = parsed
                     }
+                } catch (e: Exception) {
+                    Log.e("OpenFinance", "Erro ao buscar contas do Supabase REST: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e("OpenFinance", "Erro ao buscar do Supabase REST: ${e.message}")
+            }
+
+            if (transactionsArray == null || transactionsArray.length() == 0) {
+                try {
+                    val txRestUrl = "${supabaseClient.baseUrl}/rest/v1/open_finance_transactions?select=*&order=transaction_date.desc&limit=500"
+                    val req = Request.Builder()
+                        .url(txRestUrl)
+                        .addHeader("apikey", supabaseClient.anonKey)
+                        .addHeader("Authorization", "Bearer ${supabaseClient.anonKey}")
+                        .get()
+                        .build()
+                    val resp = httpClient.newCall(req).execute()
+                    if (resp.isSuccessful) {
+                        val raw = resp.body?.string() ?: "[]"
+                        val parsed = JSONArray(raw)
+                        if (parsed.length() > 0) {
+                            transactionsArray = parsed
+                            Log.d("OpenFinance", "Carregadas ${parsed.length()} transações do Supabase REST")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("OpenFinance", "Erro ao buscar transações do Supabase REST: ${e.message}")
+                }
             }
         }
-
         // 3. Gravar contas reais no Room Local
         if (accountsJson != null && accountsJson.length() > 0) {
             for (i in 0 until accountsJson.length()) {
@@ -271,41 +230,28 @@ class OpenFinanceRepository(
                 val accId = tx.optString("account_id", itemId)
                 val desc = tx.optString("description", "Transação Bancária")
                 val rawAmount = tx.optDouble("amount", 0.0)
-                val isExpense = rawAmount < 0 || tx.optString("payment_type") == "DEBIT" || tx.optString("type") == "DEBIT"
+                val pType = tx.optString("payment_type", tx.optString("type", ""))
+                val isCredit = pType.equals("CREDIT", ignoreCase = true)
                 val absAmount = Math.abs(rawAmount)
                 val date = tx.optString("transaction_date", tx.optString("date", "")).take(10).ifBlank {
                     SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                 }
                 val category = tx.optString("category", "Outros")
 
-                // A) Adicionar à lista de transações Open Finance
+                // A) Adicionar à lista de transações Open Finance normalizada
                 txEntities.add(
                     OpenFinanceTransactionEntity(
                         id = txId,
                         accountId = accId,
                         description = desc,
                         amount = absAmount,
+                        type = if (isCredit) "CREDIT" else "DEBIT",
                         date = date,
                         category = category,
                         isSyncedToExpenses = true
                     )
                 )
-
-                // B) Salvar como ExpenseEntity no banco de despesas do App
-                if (isExpense && absAmount > 0.0) {
-                    val expense = ExpenseEntity(
-                        storeName = desc,
-                        totalAmount = absAmount,
-                        category = category,
-                        paymentMethod = "OPEN_FINANCE",
-                        transactionDate = date,
-                        rawOcrText = "Importado via Open Finance ($bankName)",
-                        isManual = false,
-                        source = "OPEN_FINANCE",
-                        notes = "Conta: $bankName | ID: $txId"
-                    )
-                    expenseDao.insertExpense(expense)
-                }
+                // Nao salvar duplicado em ExpenseEntity — lido diretamente de open_finance_transactions
             }
             if (txEntities.isNotEmpty()) {
                 openFinanceDao.insertTransactions(txEntities)

@@ -68,4 +68,12 @@ class SupabaseAuthRepository(
     fun getCurrentSession(): SupabaseSession? {
         return sessionManager.getSession()
     }
+
+    suspend fun updateUserProfile(name: String, avatarUrl: String): Result<Unit> {
+        val res = client.updateUserProfile(name, avatarUrl)
+        sessionManager.getSession()?.let { updatedSession ->
+            _authState.value = AuthUiState.Authenticated(updatedSession)
+        }
+        return res
+    }
 }

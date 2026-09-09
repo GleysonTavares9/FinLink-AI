@@ -50,7 +50,7 @@ class SupabaseClient(
         get() = baseUrl.isNotBlank() && anonKey.isNotBlank()
 
     // ========================================================================
-    // AUTENTICAÇÃO (GoTrue Auth)
+    // AUTENTICAÇíO (GoTrue Auth)
     // ========================================================================
 
     suspend fun signUp(email: String, password: String):Result<SupabaseSession> = withContext(Dispatchers.IO) {
@@ -146,10 +146,11 @@ class SupabaseClient(
                 return Result.failure(Exception("Access token não encontrado"))
             }
             
+            val realUser = parseUserFromJwt(accessToken)
             val session = SupabaseSession(
                 accessToken = accessToken,
                 refreshToken = refreshToken ?: "",
-                user = SupabaseUser("google-oauth-user", "Conta Google (Sincronizada)", ""), // Mock user para OAuth já que o /user endpoint não está implementado
+                user = realUser,
                 expiresAt = System.currentTimeMillis() + (params["expires_in"]?.toLongOrNull() ?: 3600) * 1000
             )
             return Result.success(session)
@@ -340,11 +341,16 @@ class SupabaseClient(
         val userObj = obj.optJSONObject("user")
         val userId = userObj?.optString("id") ?: "user_${System.currentTimeMillis()}"
         val userEmail = userObj?.optString("email") ?: fallbackEmail
+        val userMeta = userObj?.optJSONObject("user_metadata")
+        val fullName = userMeta?.optString("full_name")?.ifBlank { null }
+            ?: userMeta?.optString("name") ?: ""
+        val avatarUrl = userMeta?.optString("avatar_url")?.ifBlank { null }
+            ?: userMeta?.optString("picture") ?: ""
 
         return SupabaseSession(
             accessToken = accessToken,
             refreshToken = refreshToken,
-            user = SupabaseUser(id = userId, email = userEmail),
+            user = SupabaseUser(id = userId, email = userEmail, fullName = fullName, avatarUrl = avatarUrl),
             expiresAt = expiresAt
         )
     }
@@ -370,5 +376,58 @@ class SupabaseClient(
             user = SupabaseUser(id = mockId, email = email),
             expiresAt = System.currentTimeMillis() + (86400 * 1000)
         )
+    }
+
+    fun parseUserFromJwt(accessToken: String): SupabaseUser {
+        try {
+            val parts = accessToken.split(".")
+            if (parts.size >= 2) {
+                val payloadBytes = android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+                val json = JSONObject(String(payloadBytes, Charsets.UTF_8))
+                val sub = json.optString("sub", "user_${System.currentTimeMillis()}")
+                val email = json.optString("email", "")
+                val userMeta = json.optJSONObject("user_metadata")
+                val name = userMeta?.optString("full_name")?.ifBlank { null }
+                    ?: userMeta?.optString("name")
+                    ?: json.optString("name", "")
+                val avatar = userMeta?.optString("avatar_url")?.ifBlank { null }
+                    ?: userMeta?.optString("picture")
+                    ?: json.optString("picture", "")
+                return SupabaseUser(
+                    id = sub,
+                    email = email,
+                    fullName = name,
+                    avatarUrl = avatar
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("Supabase", "Erro ao decodificar JWT do Google: ${e.message}")
+        }
+        return SupabaseUser(id = "user_${System.currentTimeMillis()}", email = "")
+    }
+
+    suspend fun updateUserProfile(name: String, avatarUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val session = sessionManager.getSession() ?: return@withContext Result.failure(Exception("Usuário não autenticado"))
+        try {
+            val payload = JSONObject().apply {
+                val data = JSONObject().apply {
+                    put("full_name", name)
+                    put("avatar_url", avatarUrl)
+                }
+                put("data", data)
+            }
+            val req = Request.Builder()
+                .url("$baseUrl/auth/v1/user")
+                .header("apikey", anonKey)
+                .header("Authorization", "Bearer ${session.accessToken}")
+                .put(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            okHttpClient.newCall(req).execute()
+            sessionManager.updateProfile(name, avatarUrl)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            sessionManager.updateProfile(name, avatarUrl)
+            Result.success(Unit)
+        }
     }
 }

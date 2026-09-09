@@ -1,4 +1,8 @@
 package com.example.ui.screens
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -35,13 +39,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.LocalPharmacy
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Subscriptions
-import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -50,8 +51,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,7 +70,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -80,13 +78,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.TransactionType
 import com.example.data.model.UnifiedTransaction
-import com.example.ui.theme.IosBlue
-import com.example.ui.theme.IosGreen
-import com.example.ui.theme.IosOrange
-import com.example.ui.theme.IosPurple
-import com.example.ui.theme.IosRed
+import com.example.ui.components.BrandTransactionIcon
 import com.example.util.formatBr
 
+/**
+ * Tela de Atividades FinLink AI
+ * Design 100% Homogêneo Estilo iPhone (Apple iOS 18 Light & Clean).
+ * Sem excesso de cores: paleta refinada e consistente.
+ * Correção estrita do bug de prefixo duplo (-R$ R$).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActivitiesScreen(
@@ -98,11 +98,22 @@ fun ActivitiesScreen(
 ) {
     var isBalanceVisible by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
-    var selectedFilter by remember { mutableStateOf("TODOS") } // TODOS, ENTRADAS, SAIDAS, ASSINATURAS, PAGAMENTOS
+    var selectedFilter by remember { mutableStateOf("TODOS") } // TODOS, ENTRADAS, SAIDAS, ASSINATURAS, PAGAMENTOS, INTERNAS
     var selectedTransaction by remember { mutableStateOf<UnifiedTransaction?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    // Filtragem de transações
+    // PALETA HOMOGíŠNEA APPLE LIGHT (SEM MULTICOIS DISCREPANTES)
+    val iosBg = Color(0xFFF2F2F7)             // Fundo cinza Apple
+    val iosCard = Color(0xFFFFFFFF)           // Branco puro Apple
+    val iosBorder = Color(0xFFE5E5EA)         // Borda sutil Apple
+    val iosTextBlack = Color(0xFF1C1C1E)      // Texto principal
+    val iosTextGray = Color(0xFF64748B)       // Subtítulos
+    val iosTextMuted = Color(0xFF8E8E93)      // Metadados
+    val iosBlue = Color(0xFF007AFF)           // Azul Apple Primário ÚNICO
+    val iosGreen = Color(0xFF34C759)          // Verde Apple (apenas para Entradas +R$)
+    val iosRed = Color(0xFFFF3B30)            // Vermelho Apple (apenas para Saídas/Faturas -R$)
+
+    // Filtragem inteligente de transações
     val filteredTransactions = remember(transactions, searchQuery, selectedFilter) {
         transactions.filter { tx ->
             val matchesSearch = searchQuery.isBlank() ||
@@ -112,10 +123,11 @@ fun ActivitiesScreen(
                     tx.notes?.contains(searchQuery, ignoreCase = true) == true
 
             val matchesType = when (selectedFilter) {
-                "ENTRADAS" -> tx.type == TransactionType.ENTRADA
-                "SAIDAS" -> tx.type == TransactionType.SAIDA || tx.type == TransactionType.CUPOM_FISCAL
+                "ENTRADAS" -> tx.type == TransactionType.ENTRADA && !tx.isInternalTransfer
+                "SAIDAS" -> (tx.type == TransactionType.SAIDA || tx.type == TransactionType.CUPOM_FISCAL || tx.type == TransactionType.PAGAMENTO) && !tx.isInternalTransfer
                 "ASSINATURAS" -> tx.isSubscription || tx.type == TransactionType.ASSINATURA
                 "PAGAMENTOS" -> tx.type == TransactionType.PAGAMENTO || tx.paymentMethod.contains("PIX", ignoreCase = true)
+                "INTERNAS" -> tx.isInternalTransfer || tx.type == TransactionType.TRANSFERENCIA
                 else -> true
             }
 
@@ -123,15 +135,30 @@ fun ActivitiesScreen(
         }
     }
 
-    // Totais Consolidados
-    val totalEntradas = transactions.filter { it.type == TransactionType.ENTRADA }.sumOf { it.amount }
-    val totalSaidas = transactions.filter { it.type != TransactionType.ENTRADA }.sumOf { it.amount }
-    val totalAssinaturas = transactions.filter { it.isSubscription || it.type == TransactionType.ASSINATURA }.sumOf { it.amount }
+    // Totais Consolidados (sem duplicidades)
+    val totalEntradas = remember(transactions) {
+        transactions.filter { it.type == TransactionType.ENTRADA && !it.isInternalTransfer }.sumOf { kotlin.math.abs(it.amount) }
+    }
+    val totalSaidas = remember(transactions) {
+        transactions.filter { !it.isInternalTransfer && it.type != TransactionType.ENTRADA && it.type != TransactionType.TRANSFERENCIA }.sumOf { kotlin.math.abs(it.amount) }
+    }
+    val totalAssinaturas = remember(transactions) {
+        transactions.filter { it.isSubscription || it.type == TransactionType.ASSINATURA }.sumOf { kotlin.math.abs(it.amount) }
+    }
 
-    // Agrupamento por data (Hoje, Ontem, Setembro 2026, etc.)
+    // Agrupamento por data
     val groupedTransactions = remember(filteredTransactions) {
         filteredTransactions.groupBy { it.dateGroup }
     }
+
+    val listState = rememberLazyListState()
+    val isScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
+    val isScrolledDown by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40 } }
+    val aiPillWidth by animateDpAsState(
+        targetValue = if (isScrolling || isScrolledDown) 50.dp else 220.dp,
+        animationSpec = tween(300),
+        label = "ai_pill_width_act"
+    )
 
     Scaffold(
         containerColor = Color.Transparent
@@ -139,14 +166,14 @@ fun ActivitiesScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF4F6FB))
+                .background(iosBg)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = 16.dp, start = 16.dp, end = 16.dp)
             ) {
-                // TOPO: ÍCONE DE OLHO (PRIVACIDADE) + BOTÃO (+)
+                // TOPO: OLHO DE PRIVACIDADE + BOTíO (+) EM AZUL APPLE (HOMOGíŠNEO)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -157,25 +184,25 @@ fun ActivitiesScreen(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
-                            .background(Color.White)
-                            .border(1.dp, Color(0xFFE2E8F0), CircleShape)
+                            .background(iosCard)
+                            .border(1.dp, iosBorder, CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                             contentDescription = "Ocultar Valores",
-                            tint = Color(0xFF475569),
+                            tint = iosTextGray,
                             modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    // Botão (+) Flutuante no topo direito (estilo Pierre / Atividades)
+                    // Botão (+) em Azul Apple Homogêneo (sem verde discrepante)
                     IconButton(
                         onClick = { showAddDialog = true },
                         modifier = Modifier
                             .size(44.dp)
+                            .shadow(6.dp, CircleShape, spotColor = Color(0x18000000))
                             .clip(CircleShape)
-                            .background(Color(0xFF10B981))
-                            .shadow(8.dp, CircleShape, spotColor = Color(0xFF10B981).copy(alpha = 0.4f))
+                            .background(iosBlue)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -188,87 +215,97 @@ fun ActivitiesScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // TÍTULO DA TELA
+                // Tí TULO DA TELA
                 Text(
                     text = "Atividades",
-                    fontSize = 28.sp,
+                    fontSize = 30.sp,
                     fontWeight = FontWeight.Black,
-                    color = Color(0xFF0F172A)
+                    color = iosTextBlack,
+                    letterSpacing = (-0.6).sp
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // BARRA DE BUSCA
+                // BARRA DE BUSCA HOMOGíŠNEA
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Buscar lançamentos, lojas ou assinaturas...", fontSize = 14.sp, color = Color(0xFF94A3B8)) },
+                    placeholder = { Text("Buscar lançamentos, lojas ou faturas...", fontSize = 14.sp, color = iosTextMuted) },
                     leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Search, contentDescription = null, tint = iosTextGray, modifier = Modifier.size(20.dp))
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = Color(0x06000000)),
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
-                        focusedBorderColor = IosBlue,
-                        unfocusedBorderColor = Color(0xFFE2E8F0)
+                        focusedContainerColor = iosCard,
+                        unfocusedContainerColor = iosCard,
+                        focusedBorderColor = iosBlue,
+                        unfocusedBorderColor = iosBorder,
+                        focusedTextColor = iosTextBlack,
+                        unfocusedTextColor = iosTextBlack
                     ),
                     singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // CHIPS DE FILTRO (Filtros, Entradas, Saídas, Assinaturas, Pagamentos)
+                // Pí LULAS DE FILTRO HOMOGíŠNEAS APPLE (AZUL SELECIONADO / BRANCO DESELECIONADO)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ActivityFilterChip(
+                    AppleFilterChip(
                         label = "Todos",
-                        icon = Icons.Default.Tune,
                         isSelected = selectedFilter == "TODOS",
-                        onClick = { selectedFilter = "TODOS" }
+                        onClick = { selectedFilter = "TODOS" },
+                        activeColor = iosBlue
                     )
-                    ActivityFilterChip(
+                    AppleFilterChip(
                         label = "Entradas",
-                        icon = null,
                         isSelected = selectedFilter == "ENTRADAS",
-                        badgeColor = Color(0xFF10B981),
-                        onClick = { selectedFilter = "ENTRADAS" }
+                        onClick = { selectedFilter = "ENTRADAS" },
+                        activeColor = iosBlue
                     )
-                    ActivityFilterChip(
+                    AppleFilterChip(
                         label = "Saídas",
-                        icon = null,
                         isSelected = selectedFilter == "SAIDAS",
-                        badgeColor = IosRed,
-                        onClick = { selectedFilter = "SAIDAS" }
+                        onClick = { selectedFilter = "SAIDAS" },
+                        activeColor = iosBlue
                     )
-                    ActivityFilterChip(
+                    AppleFilterChip(
                         label = "Assinaturas",
-                        icon = Icons.Default.Subscriptions,
                         isSelected = selectedFilter == "ASSINATURAS",
-                        badgeColor = IosPurple,
-                        onClick = { selectedFilter = "ASSINATURAS" }
+                        onClick = { selectedFilter = "ASSINATURAS" },
+                        activeColor = iosBlue
                     )
-                    ActivityFilterChip(
+                    AppleFilterChip(
                         label = "Pagamentos",
-                        icon = Icons.Default.CreditCard,
                         isSelected = selectedFilter == "PAGAMENTOS",
-                        onClick = { selectedFilter = "PAGAMENTOS" }
+                        onClick = { selectedFilter = "PAGAMENTOS" },
+                        activeColor = iosBlue
+                    )
+                    AppleFilterChip(
+                        label = "Internas",
+                        isSelected = selectedFilter == "INTERNAS",
+                        onClick = { selectedFilter = "INTERNAS" },
+                        activeColor = iosBlue
                     )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // CARD RESUMO FINANCEIRO COMPACTO
+                // CARD RESUMO FINANCEIRO HOMOGíŠNEO (BRANCO PURO APPLE)
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(6.dp, RoundedCornerShape(20.dp), spotColor = Color(0x08000000)),
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.verticalGradient(listOf(Color(0xFFE2E8F0), Color(0xFFCBD5E1))))
+                    colors = CardDefaults.cardColors(containerColor = iosCard),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)
                 ) {
                     Row(
                         modifier = Modifier
@@ -278,32 +315,35 @@ fun ActivitiesScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Entradas (+)", fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                            Text("Entradas (+)", fontSize = 11.sp, color = iosGreen, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 if (isBalanceVisible) "+${totalEntradas.formatBr()}" else "+R$ •••••",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Black,
-                                color = Color(0xFF10B981)
+                                color = iosGreen
                             )
                         }
-                        Box(modifier = Modifier.width(1.dp).height(28.dp).background(Color(0xFFE2E8F0)))
+                        Box(modifier = Modifier.width(1.dp).height(28.dp).background(iosBorder))
                         Column {
-                            Text("Saídas (-)", fontSize = 11.sp, color = IosRed, fontWeight = FontWeight.Bold)
+                            Text("Saídas (-)", fontSize = 11.sp, color = iosRed, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 if (isBalanceVisible) "-${totalSaidas.formatBr()}" else "-R$ •••••",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Black,
-                                color = Color(0xFF0F172A)
+                                color = iosRed
                             )
                         }
-                        Box(modifier = Modifier.width(1.dp).height(28.dp).background(Color(0xFFE2E8F0)))
+                        Box(modifier = Modifier.width(1.dp).height(28.dp).background(iosBorder))
                         Column {
-                            Text("Assinaturas", fontSize = 11.sp, color = IosPurple, fontWeight = FontWeight.Bold)
+                            Text("Assinaturas", fontSize = 11.sp, color = iosTextGray, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 if (isBalanceVisible) totalAssinaturas.formatBr() else "R$ •••••",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Black,
-                                color = IosPurple
+                                color = iosTextBlack
                             )
                         }
                     }
@@ -311,7 +351,7 @@ fun ActivitiesScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // LISTA DE TRANSAÇÕES AGRUPADAS
+                // LISTA DE TRANSAí‡í•ES
                 if (filteredTransactions.isEmpty()) {
                     Box(
                         modifier = Modifier
@@ -320,27 +360,28 @@ fun ActivitiesScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(54.dp))
+                            Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = iosTextMuted, modifier = Modifier.size(48.dp))
                             Spacer(modifier = Modifier.height(10.dp))
-                            Text("Nenhum lançamento encontrado", fontWeight = FontWeight.Bold, color = Color(0xFF475569))
-                            Text("Ajuste os filtros ou registre um novo gasto/cupom.", fontSize = 13.sp, color = Color(0xFF94A3B8))
+                            Text("Nenhum lançamento encontrado", fontWeight = FontWeight.Bold, color = iosTextBlack)
+                            Text("Ajuste os filtros ou registre um novo lançamento.", fontSize = 13.sp, color = iosTextGray)
                         }
                     }
                 } else {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 90.dp)
+                        contentPadding = PaddingValues(bottom = 140.dp)
                     ) {
                         groupedTransactions.forEach { (dateGroup, itemsInGroup) ->
                             item(key = "header_$dateGroup") {
                                 Text(
                                     text = dateGroup,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color(0xFF1E293B),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = iosTextBlack,
                                     modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
                                 )
                             }
@@ -349,6 +390,12 @@ fun ActivitiesScreen(
                                 ActivityTransactionRow(
                                     transaction = tx,
                                     isBalanceVisible = isBalanceVisible,
+                                    iosCard = iosCard,
+                                    iosBorder = iosBorder,
+                                    iosTextBlack = iosTextBlack,
+                                    iosTextGray = iosTextGray,
+                                    iosGreen = iosGreen,
+                                    iosRed = iosRed,
                                     onClick = { selectedTransaction = tx }
                                 )
                             }
@@ -357,20 +404,20 @@ fun ActivitiesScreen(
                 }
             }
 
-            // PÍLULA FLUTUANTE INFERIOR: "Pergunte ao FinLink AI" (Idêntico ao Screenshot 2)
+            // Pí LULA INFERIOR: "Pergunte ao FinLink AI..." (HOMOGíŠNEA, POSICIONADA ACIMA DO DOCK)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 20.dp, start = 16.dp, end = 16.dp)
+                    .padding(bottom = 85.dp, start = 16.dp, end = 16.dp)
             ) {
                 Surface(
                     shape = RoundedCornerShape(26.dp),
-                    color = Color.White,
-                    shadowElevation = 14.dp,
-                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.verticalGradient(listOf(Color(0xFFE2E8F0), Color(0xFFCBD5E1)))),
+                    color = iosCard,
+                    shadowElevation = 8.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp)
+                        .height(50.dp)
                 ) {
                     Row(
                         modifier = Modifier
@@ -385,24 +432,24 @@ fun ActivitiesScreen(
                                 .weight(1f)
                                 .clickable { onNavigateToAi() }
                         ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = IosPurple, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = iosBlue, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = "Pergunte ao FinLink AI...",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF64748B)
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = iosTextGray
                             )
                         }
 
                         IconButton(
                             onClick = onNavigateToScan,
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFF1F5F9))
+                                .background(Color(0xFFF2F2F7))
                         ) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = iosBlue, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -410,7 +457,7 @@ fun ActivitiesScreen(
         }
     }
 
-    // MODAL DE DETALHES DA TRANSAÇÃO AO TOCAR
+    // MODAL DE DETALHES
     if (selectedTransaction != null) {
         val tx = selectedTransaction!!
         ModalBottomSheet(
@@ -427,7 +474,7 @@ fun ActivitiesScreen(
         }
     }
 
-    // MODAL DE AÇÕES RÁPIDAS (+)
+    // MODAL DE NOVO LANí‡AMENTO
     if (showAddDialog) {
         ModalBottomSheet(
             onDismissRequest = { showAddDialog = false },
@@ -440,8 +487,8 @@ fun ActivitiesScreen(
                     .padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text("Novo Lançamento", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-                Text("Escolha como deseja adicionar seu lançamento:", fontSize = 13.sp, color = Color(0xFF64748B))
+                Text("Novo Lançamento", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = iosTextBlack)
+                Text("Escolha como deseja adicionar seu lançamento:", fontSize = 13.sp, color = iosTextGray)
 
                 Button(
                     onClick = {
@@ -450,7 +497,7 @@ fun ActivitiesScreen(
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                    colors = ButtonDefaults.buttonColors(containerColor = iosBlue)
                 ) {
                     Icon(Icons.Default.QrCodeScanner, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -464,11 +511,11 @@ fun ActivitiesScreen(
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1C1C1E))
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Lançamento Manual (Entrada/Saída)", fontWeight = FontWeight.Bold)
+                    Text("Lançamento Manual", fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -477,71 +524,63 @@ fun ActivitiesScreen(
     }
 }
 
+/**
+ * Pílula de Filtro Homogênea Apple
+ */
 @Composable
-fun ActivityFilterChip(
+fun AppleFilterChip(
     label: String,
-    icon: ImageVector?,
     isSelected: Boolean,
-    badgeColor: Color? = null,
+    activeColor: Color,
     onClick: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (isSelected) Color(0xFF0F172A) else Color.White,
-        border = CardDefaults.outlinedCardBorder().copy(
-            brush = Brush.verticalGradient(
-                if (isSelected) listOf(Color(0xFF0F172A), Color(0xFF0F172A))
-                else listOf(Color(0xFFE2E8F0), Color(0xFFE2E8F0))
-            )
+        shape = RoundedCornerShape(18.dp),
+        color = if (isSelected) activeColor else Color.White,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isSelected) activeColor else Color(0xFFE5E5EA)
         ),
         modifier = Modifier
-            .height(38.dp)
             .clickable { onClick() }
+            .shadow(if (isSelected) 3.dp else 1.dp, RoundedCornerShape(18.dp), spotColor = Color(0x0A000000))
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            if (icon != null) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = if (isSelected) Color.White else Color(0xFF475569),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-            if (badgeColor != null) {
-                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(badgeColor))
-            }
-            Text(
-                text = label,
-                fontSize = 13.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) Color.White else Color(0xFF334155)
-            )
-        }
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = if (isSelected) Color.White else Color(0xFF475569),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        )
     }
 }
 
+/**
+ * Linha de Transação Homogênea Estilo Apple
+ * Correção crítica do bug de duplo R$ (-R$ R$ 228,80 -> -R$ 228,80).
+ */
 @Composable
 fun ActivityTransactionRow(
     transaction: UnifiedTransaction,
     isBalanceVisible: Boolean,
+    iosCard: Color,
+    iosBorder: Color,
+    iosTextBlack: Color,
+    iosTextGray: Color,
+    iosGreen: Color,
+    iosRed: Color,
     onClick: () -> Unit
 ) {
     val isIncome = transaction.type == TransactionType.ENTRADA
-    val isSub = transaction.isSubscription || transaction.type == TransactionType.ASSINATURA
+    val isTransfer = transaction.isInternalTransfer || transaction.type == TransactionType.TRANSFERENCIA
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = CardDefaults.outlinedCardBorder().copy(
-            brush = Brush.verticalGradient(listOf(Color(0xFFF1F5F9), Color(0xFFE2E8F0)))
-        )
+        colors = CardDefaults.cardColors(containerColor = iosCard),
+        border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)
     ) {
         Row(
             modifier = Modifier
@@ -549,101 +588,66 @@ fun ActivityTransactionRow(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // ÍCONE COM BADGE DO BANCO / SERVIÇO
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when {
-                            transaction.title.contains("NETFLIX", ignoreCase = true) -> Color(0xFF1E1E1E)
-                            transaction.title.contains("SPOTIFY", ignoreCase = true) -> Color(0xFF1DB954).copy(alpha = 0.15f)
-                            transaction.title.contains("Farmácia", ignoreCase = true) || transaction.category.contains("Farmácia", ignoreCase = true) -> Color(0xFF0EA5E9).copy(alpha = 0.15f)
-                            isIncome -> Color(0xFF10B981).copy(alpha = 0.15f)
-                            isSub -> Color(0xFFAF52DE).copy(alpha = 0.15f)
-                            else -> Color(0xFF64748B).copy(alpha = 0.12f)
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (transaction.title.contains("NETFLIX", ignoreCase = true)) {
-                    Text("N", color = Color(0xFFE50914), fontWeight = FontWeight.Black, fontSize = 20.sp)
-                } else {
-                    Icon(
-                        imageVector = when {
-                            transaction.title.contains("Farmácia", ignoreCase = true) -> Icons.Default.LocalPharmacy
-                            isSub -> Icons.Default.Subscriptions
-                            isIncome -> Icons.Default.AccountBalance
-                            transaction.type == TransactionType.CUPOM_FISCAL -> Icons.AutoMirrored.Filled.ReceiptLong
-                            else -> Icons.Default.CreditCard
-                        },
-                        contentDescription = null,
-                        tint = when {
-                            transaction.title.contains("Farmácia", ignoreCase = true) -> Color(0xFF0284C7)
-                            isIncome -> Color(0xFF10B981)
-                            isSub -> IosPurple
-                            else -> Color(0xFF475569)
-                        },
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
-                // Badge miniatura do banco (ex: Mercado Pago, Nubank) no canto inferior
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(if (transaction.bankName.contains("Mercado", ignoreCase = true)) Color(0xFFFFE600) else Color(0xFF820AD1))
-                        .border(1.dp, Color.White, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        if (transaction.bankName.contains("Mercado", ignoreCase = true)) "M" else "N",
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (transaction.bankName.contains("Mercado", ignoreCase = true)) Color(0xFF003B6D) else Color.White
-                    )
-                }
-            }
+            // í cone Original da Marca com Badge de Banco
+            BrandTransactionIcon(
+                title = transaction.title,
+                category = transaction.category,
+                bankName = transaction.bankName,
+                isIncome = isIncome,
+                size = 46.dp
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // TÍTULO E SUBTÍTULO
+            // Título e Subtítulos
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = transaction.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
-                    color = Color(0xFF0F172A),
+                    color = iosTextBlack,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = transaction.subtitle,
+                    text = "${transaction.formattedDate} • ${transaction.category}",
                     fontSize = 11.sp,
-                    color = Color(0xFF64748B),
+                    color = iosTextGray,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (transaction.bankName.isNotEmpty()) {
+                    Text(
+                        text = transaction.bankName,
+                        fontSize = 10.sp,
+                        color = Color(0xFF8E8E93),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // VALOR COM DESTAQUE
+            // CORREí‡íO CRí TICA DO BUG DE DUPLO R$:
+            // formatBr() já retorna "R$ 228,80", logo prefixamos apenas com "+" ou "-"
             val formattedValue = if (isBalanceVisible) {
-                val prefix = if (isIncome) "+" else "-"
-                "$prefix${transaction.amount.formatBr()}"
+                val sign = if (isIncome) "+" else "-"
+                "$sign${kotlin.math.abs(transaction.amount).formatBr()}"
             } else {
-                if (isIncome) "+R$ •••••" else "-R$ •••••"
+                if (isIncome) "+R$ •••" else "-R$ •••"
             }
 
             Text(
                 text = formattedValue,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Black,
                 fontSize = 15.sp,
-                color = if (isIncome) Color(0xFF10B981) else Color(0xFF0F172A)
+                color = when {
+                    isIncome -> iosGreen
+                    isTransfer -> iosTextGray
+                    else -> iosRed
+                }
             )
         }
     }
@@ -656,103 +660,91 @@ fun TransactionDetailBottomSheetContent(
     onClose: () -> Unit
 ) {
     val isIncome = transaction.type == TransactionType.ENTRADA
+    val isTransfer = transaction.isInternalTransfer || transaction.type == TransactionType.TRANSFERENCIA
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Detalhes do Lançamento",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = Color(0xFF0F172A)
-            )
+            Text("Detalhes do Lançamento", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF1C1C1E))
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Fechar")
+                Icon(Icons.Default.Close, contentDescription = "Fechar", tint = Color(0xFF8E8E93))
             }
-        }
-
-        // VALOR GRANDE
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(if (isIncome) Color(0xFFECFDF5) else Color(0xFFF8FAFC))
-                .padding(20.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = if (isIncome) "VALOR RECEBIDO" else "VALOR PAGO",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isIncome) Color(0xFF059669) else Color(0xFF64748B)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (isBalanceVisible) {
-                        (if (isIncome) "+" else "-") + transaction.amount.formatBr()
-                    } else "R$ •••••",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Black,
-                    color = if (isIncome) Color(0xFF059669) else Color(0xFF0F172A)
-                )
-            }
-        }
-
-        // CAMPOS DETALHADOS
-        DetailItemRow(label = "Estabelecimento / Título", value = transaction.title)
-        DetailItemRow(label = "Categoria", value = transaction.category)
-        DetailItemRow(label = "Conta / Banco", value = transaction.bankName)
-        DetailItemRow(label = "Forma de Pagamento", value = transaction.paymentMethod)
-        DetailItemRow(label = "Data da Operação", value = transaction.date)
-        DetailItemRow(label = "Tipo", value = when (transaction.type) {
-            TransactionType.ENTRADA -> "Entrada / Receita"
-            TransactionType.ASSINATURA -> "Assinatura Recorrente"
-            TransactionType.CUPOM_FISCAL -> "Cupom Fiscal NFC-e"
-            TransactionType.PAGAMENTO -> "Pagamento / Transferência"
-            else -> "Despesa / Saída"
-        })
-
-        // Se for cupom com itens
-        if (transaction.items.isNotEmpty()) {
-            Text("Itens do Cupom Fiscal (${transaction.items.size}):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFF1F5F9))
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                transaction.items.forEach { item ->
-                    Text("• $item", fontSize = 12.sp, color = Color(0xFF334155))
-                }
-            }
-        }
-
-        if (!transaction.notes.isNullOrBlank()) {
-            DetailItemRow(label = "Observações", value = transaction.notes)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        BrandTransactionIcon(
+            title = transaction.title,
+            category = transaction.category,
+            bankName = transaction.bankName,
+            isIncome = isIncome,
+            size = 64.dp
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = transaction.title,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1C1C1E)
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Correção de duplo R$ no modal também
+        val modalValue = if (isBalanceVisible) {
+            val sign = if (isIncome) "+" else "-"
+            "$sign${kotlin.math.abs(transaction.amount).formatBr()}"
+        } else {
+            "R$ •••••"
+        }
+
+        Text(
+            text = modalValue,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Black,
+            color = when {
+                isIncome -> Color(0xFF34C759)
+                isTransfer -> Color(0xFF64748B)
+                else -> Color(0xFFFF3B30)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF2F2F7))
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                DetailRow("Data", transaction.formattedDate)
+                DetailRow("Categoria", transaction.category)
+                DetailRow("Instituição / Origem", transaction.bankName.ifEmpty { "FinLink AI" })
+                DetailRow("Tipo", if (isIncome) "Entrada / Receita" else if (isTransfer) "Transferência Interna" else "Saída / Despesa")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
     }
 }
 
 @Composable
-fun DetailItemRow(label: String, value: String) {
+fun DetailRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, fontSize = 13.sp, color = Color(0xFF64748B))
-        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+        Text(text = label, fontSize = 13.sp, color = Color(0xFF8E8E93))
+        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1C1C1E))
     }
 }

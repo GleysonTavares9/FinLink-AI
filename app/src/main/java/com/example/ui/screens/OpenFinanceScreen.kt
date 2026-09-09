@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.ui.components.BankLogoView
+
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -79,18 +81,7 @@ fun OpenFinanceScreen(
     var lastConnectedItemId by remember { mutableStateOf<String?>(null) }
     var isSyncingNow by remember { mutableStateOf(false) }
 
-    val effectiveAccounts = if (connectedAccounts.isNotEmpty()) connectedAccounts else listOf(
-        OpenFinanceAccountEntity(
-            id = "mp_primary_001",
-            bankName = "Mercado Pago",
-            accountType = "Conta Corrente & Investimentos",
-            accountNumber = "Ag 0001 • CC 482910-3",
-            balance = 1854.20,
-            connectedAt = System.currentTimeMillis() - 86400000L * 15,
-            status = "CONECTADO",
-            lastSync = System.currentTimeMillis()
-        )
-    )
+    val effectiveAccounts = connectedAccounts
 
     // Saldo Total Consolidado Real
     val totalBalance = effectiveAccounts.sumOf { it.balance }
@@ -281,7 +272,7 @@ fun OpenFinanceScreen(
                 }
             }
 
-            // 2. BOTÃO PRINCIPAL DE CONEXÃO
+            // 2. BOTíO PRINCIPAL DE CONEXíO
             item {
                 Button(
                     onClick = { launchPluggyFlow() },
@@ -381,8 +372,54 @@ fun OpenFinanceScreen(
                 }
             }
 
+            
+            if (effectiveAccounts.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        border = CardDefaults.outlinedCardBorder()
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.AccountBalance,
+                                contentDescription = null,
+                                tint = Color(0xFF64748B),
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Text(
+                                "Nenhuma Conta Conectada",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Conecte sua conta bancária oficial via Open Finance para sincronizar seus saldos e extratos em tempo real com segurança criptografada pelo Banco Central.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Button(
+                                onClick = { launchPluggyFlow() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.padding(top = 8.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Conectar Banco Agora", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
             items(effectiveAccounts) { acc ->
-                val isMp = acc.bankName.contains("Mercado Pago", ignoreCase = true)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -407,29 +444,10 @@ fun OpenFinanceScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(46.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isMp) Color(0xFFFFE600) else Color(0xFFEEF2FF)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isMp) {
-                                        Text(
-                                            text = "M",
-                                            fontSize = 24.sp,
-                                            fontWeight = FontWeight.Black,
-                                            color = Color(0xFF003B6D)
-                                        )
-                                    } else {
-                                        Icon(
-                                            Icons.Default.AccountBalance,
-                                            contentDescription = null,
-                                            tint = Color(0xFF4F46E5),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
-                                }
+                                BankLogoView(
+                                    bankName = acc.bankName,
+                                    size = 46.dp
+                                )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -585,7 +603,7 @@ fun OpenFinanceScreen(
 
     LaunchedEffect(showPluggyWebView, activeConnectToken) {
         if (showPluggyWebView && !activeConnectToken.isNullOrBlank()) {
-            val pluggyUrl = "https://connect.pluggy.ai/?connect_token=$activeConnectToken&includeSandbox=true&redirectUrl=finlink://pluggy-callback"
+            val pluggyUrl = "https://connect.pluggy.ai/?connect_token=$activeConnectToken&connectToken=$activeConnectToken&includeSandbox=false&redirectUrl=finlink://pluggy-callback"
             try {
                 customTabsIntent.launchUrl(context, android.net.Uri.parse(pluggyUrl))
             } catch (e: Exception) {

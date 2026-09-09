@@ -1,4 +1,4 @@
-package com.example.data.db
+﻿package com.example.data.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -20,8 +20,10 @@ data class OpenFinanceTransactionEntity(
     @PrimaryKey val id: String,
     val accountId: String,
     val description: String,
-    val amount: Double,
+    val amount: Double,         // valor absoluto
+    val type: String = "DEBIT", // DEBIT = saida, CREDIT = entrada
     val date: String,
     val category: String,
     val isSyncedToExpenses: Boolean = false
 )
+
