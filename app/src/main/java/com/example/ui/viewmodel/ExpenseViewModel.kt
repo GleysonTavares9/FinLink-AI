@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+
 sealed interface ScanUiState {
     object Idle : ScanUiState
     object Scanning : ScanUiState
@@ -239,10 +240,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun getHouseholdContextString(): String? {
+        val profile = householdProfile.value
+        if (profile == null || !profile.isConfigured) return null
+        return "FamÃ­lia com ${profile.adultCount} adulto(s) e ${profile.childCount} crianÃ§a(s). Renda Mensal: R$ ${profile.monthlyIncome}."
+    }
+
     fun scanReceiptWithGemini(bitmap: Bitmap) {
         viewModelScope.launch {
             _scanState.value = ScanUiState.Scanning
-            val result = aiProvider.analyzeReceipt(bitmap)
+            val context = getHouseholdContextString()
+            val result = aiProvider.analyzeReceipt(bitmap, context)
             result.fold(
                 onSuccess = { receipt ->
                     _scanState.value = ScanUiState.Success(receipt)
@@ -257,7 +265,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         fun scanNfceHtml(html: String, urlOrKey: String) {
         viewModelScope.launch {
             _scanState.value = ScanUiState.Scanning
-            val result = nfceFetcher.fetchReceiptFromHtml(html, urlOrKey)
+            val context = getHouseholdContextString()
+            val result = nfceFetcher.fetchReceiptFromHtml(html, urlOrKey, context)
             result.fold(
                 onSuccess = { receipt ->
                     _scanState.value = ScanUiState.Success(receipt)
@@ -272,7 +281,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun scanNfceUrlOrKey(urlOrKey: String) {
         viewModelScope.launch {
             _scanState.value = ScanUiState.Scanning
-            val result = nfceFetcher.fetchReceipt(urlOrKey)
+            val context = getHouseholdContextString()
+            val result = nfceFetcher.fetchReceipt(urlOrKey, context)
             result.fold(
                 onSuccess = { receipt ->
                     _scanState.value = ScanUiState.Success(receipt)
@@ -287,6 +297,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun saveScannedReceipt(receipt: ScannedReceiptResult, imagePath: String? = null) {
         viewModelScope.launch {
             val source = if (receipt.confidence.contains("SEFAZ", ignoreCase = true)) "NFC-E_SEFAZ" else "OCR_GEMINI"
+            val finalNotes = if (!receipt.familyAnalysis.isNullOrBlank()) "AnÃ¡lise Familiar via Gemini: ${receipt.familyAnalysis}" else null
             val entity = ExpenseEntity(
                 storeName = receipt.storeName,
                 totalAmount = receipt.totalAmount,
@@ -297,7 +308,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 receiptImagePath = imagePath,
                 isManual = false,
                 source = source,
-                itemsJson = receipt.items.joinToString(" | ")
+                itemsJson = receipt.items.joinToString(" | "),
+                notes = finalNotes
             )
             expenseDao.insertExpense(entity)
             _scanState.value = ScanUiState.Idle

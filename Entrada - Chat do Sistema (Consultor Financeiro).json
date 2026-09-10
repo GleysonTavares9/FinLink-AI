@@ -1,0 +1,102 @@
+{
+  "name": "Entrada - Chat do Sistema (Consultor Financeiro)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "consultor-financeiro/chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "56873e70-e921-4694-a056-a943a945a8a1",
+      "name": "Receber Mensagem do Sistema",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        -64
+      ],
+      "webhookId": "527a3c13-121e-4d7e-ae5e-32188eac9604"
+    },
+    {
+      "parameters": {
+        "agentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "LoMvAjC8S95rsYTS",
+          "cachedResultName": "Orquestrador Consultor Financeiro"
+        },
+        "message": "={{ $json.body.message }}",
+        "advanced": {
+          "enableStreaming": false,
+          "session": {
+            "session": {
+              "sessionIdType": "customKey",
+              "sessionKey": "={{ $json.body.sessionId }}"
+            }
+          }
+        }
+      },
+      "id": "76cb8c5e-9606-41dc-ad12-2962ae07d6d0",
+      "name": "Consultar Orquestrador",
+      "type": "n8n-nodes-base.messageAnAgent",
+      "typeVersion": 3.1,
+      "position": [
+        112,
+        -262
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"reply\": $json.text } }}",
+        "options": {}
+      },
+      "id": "644c2847-51dc-4500-a5ff-ea0f3aa435fd",
+      "name": "Responder ao Sistema",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        368,
+        -16
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receber Mensagem do Sistema": {
+      "main": [
+        [
+          {
+            "node": "Consultar Orquestrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Orquestrador": {
+      "main": [
+        [
+          {
+            "node": "Responder ao Sistema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "7a479687-4ea8-48c5-bbd9-15a5ad314793",
+  "meta": {
+    "instanceId": "53f976e1b840a45f070de5bcff5ad15e69953a60b306d86f5a1ae2fb8630c6ca"
+  },
+  "nodeGroups": [],
+  "id": "3OjUj4n2wY3KBfU7",
+  "tags": []
+}

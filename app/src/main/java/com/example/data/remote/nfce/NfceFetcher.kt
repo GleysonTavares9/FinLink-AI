@@ -26,7 +26,7 @@ class NfceFetcher(
         .followRedirects(true)
         .build()
 
-        suspend fun fetchReceiptFromHtml(htmlBody: String, originalUrlOrKey: String): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
+        suspend fun fetchReceiptFromHtml(htmlBody: String, originalUrlOrKey: String, householdContext: String? = null): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
         val trimmed = originalUrlOrKey.trim()
         Log.d("NFCeDebug", "HTML recebido (tamanho: ${htmlBody.length}): ${htmlBody.take(500)}...")
         val parsed = parser.parse(htmlBody, trimmed)
@@ -39,7 +39,7 @@ class NfceFetcher(
         val contentForAi = if (htmlBody.isNotBlank()) htmlBody.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ") else trimmed
         try {
             Log.d("NFCeDebug", "Enviando texto limpo para o Gemini (tamanho: ${contentForAi.length}): ${contentForAi.take(1000)}...")
-            val aiResult = aiProvider.analyzeReceiptText(contentForAi)
+            val aiResult = aiProvider.analyzeReceiptText(contentForAi, householdContext)
             Log.d("NFCeDebug", "Resultado do Gemini - isSuccess: ${aiResult.isSuccess}")
             if (aiResult.isSuccess) {
                 val aiReceipt = aiResult.getOrNull()
@@ -60,7 +60,7 @@ class NfceFetcher(
         Result.success(parsed)
     }
 
-    suspend fun fetchReceipt(urlOrKey: String): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
+    suspend fun fetchReceipt(urlOrKey: String, householdContext: String? = null): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
         val trimmed = urlOrKey.trim()
 
         var htmlBody = ""
@@ -99,7 +99,7 @@ class NfceFetcher(
         val contentForAi = if (htmlBody.isNotBlank()) htmlBody.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ") else trimmed
         try {
             Log.d("NFCeDebug", "Enviando texto limpo para o Gemini (tamanho: ${contentForAi.length}): ${contentForAi.take(1000)}...")
-            val aiResult = aiProvider.analyzeReceiptText(contentForAi)
+            val aiResult = aiProvider.analyzeReceiptText(contentForAi, householdContext)
             Log.d("NFCeDebug", "Resultado do Gemini - isSuccess: ${aiResult.isSuccess}")
             if (aiResult.isSuccess) {
                 val aiReceipt = aiResult.getOrNull()

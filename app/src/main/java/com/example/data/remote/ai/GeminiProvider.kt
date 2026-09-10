@@ -36,7 +36,7 @@ class GeminiProvider(
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    override suspend fun analyzeReceipt(bitmap: Bitmap): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
+    override suspend fun analyzeReceipt(bitmap: Bitmap, householdContext: String?): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
         // 1. Extração local prévia com ML Kit On-Device (rápido, sem rede e confiável)
         val localOcrResult = ocrEngine.analyzeReceipt(bitmap)
 
@@ -56,8 +56,7 @@ class GeminiProvider(
             ${localOcrResult.rawText.take(4000)}
 
             Extraia rigorosamente as informações no formato JSON estrito:
-            {
-              "storeName": "Nome Fantasia ou Razão Social do Estabelecimento",
+            {\n              "storeName": "Nome Fantasia ou Razão Social do Estabelecimento",
               "totalAmount": 123.45,
               "transactionDate": "YYYY-MM-DD",
               "category": "Alimentação, Transporte, Lazer, Saúde, Moradia, Mercado, ou Outros",
@@ -113,7 +112,7 @@ class GeminiProvider(
         }
     }
 
-    override suspend fun analyzeReceiptText(text: String): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
+    override suspend fun analyzeReceiptText(text: String, householdContext: String?): Result<ScannedReceiptResult> = withContext(Dispatchers.IO) {
         val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
             return@withContext Result.failure(Exception("API Key não configurada"))
@@ -129,10 +128,9 @@ class GeminiProvider(
               "category": "Mercado, Alimentação, Transporte, Saúde, Moradia, Lazer, ou Outros",
               "paymentMethod": "PIX, Cartão de Crédito, Cartão de Débito, Dinheiro, ou NFC-e",
               "items": ["1x Item Descrição - R$ 10.00", "2x Item Descrição - R$ 15.00"],
-              "confidence": "ALTA (SEFAZ Oficial)"
-            }
+              "confidence": "ALTA (SEFAZ Oficial)",\n              "familyAnalysis": "Sua anÃ¡lise do suprimento familiar baseada na compra (Opcional)"\n            }
             Atenção crítica: o campo totalAmount DEVE ser o valor total da nota em número decimal com ponto (ex: 89.50).
-            Retorne estritamente o JSON.
+            Se houver \'Contexto Familiar\', use-o para gerar a anÃ¡lise de suprimento em \'familyAnalysis\'.\n            Retorne estritamente o JSON.\n\n            Contexto Familiar (se houver): ${householdContext ?: "Nenhum"}
 
             Conteúdo da Nota/Cupom:
             ${text.take(12000)}
@@ -315,7 +313,8 @@ class GeminiProvider(
                 paymentMethod = paymentMethod,
                 items = itemsList,
                 rawText = cleanJson,
-                confidence = "ALTA ($modelName)"
+                confidence = "ALTA ($modelName)",
+                familyAnalysis = obj.optString("familyAnalysis", "").takeIf { it.isNotBlank() }
             )
         } catch (e: Exception) {
             fallbackResult ?: ScannedReceiptResult(

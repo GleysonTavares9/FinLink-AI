@@ -14,7 +14,7 @@ interface AiProvider {
     /**
      * Analisa uma imagem de cupom fiscal multimodalmente e extrai dados estruturados.
      */
-    suspend fun analyzeReceipt(bitmap: Bitmap): Result<ScannedReceiptResult>
+    suspend fun analyzeReceipt(bitmap: Bitmap, householdContext: String? = null): Result<ScannedReceiptResult>
 
     /**
      * Gera recomendações e conselhos financeiros baseados no histórico de despesas e composição familiar.
@@ -28,5 +28,5 @@ interface AiProvider {
     /**
      * Analisa texto ou HTML de NFC-e/SEFAZ e extrai dados fiscais estruturados.
      */
-    suspend fun analyzeReceiptText(text: String): Result<ScannedReceiptResult>
+    suspend fun analyzeReceiptText(text: String, householdContext: String? = null): Result<ScannedReceiptResult>
 }

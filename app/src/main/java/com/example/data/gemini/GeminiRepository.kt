@@ -23,7 +23,8 @@ data class ScannedReceiptResult(
     val paymentMethod: String = "Cartão de Crédito",
     val items: List<String> = emptyList(),
     val rawText: String = "",
-    val confidence: String = "ALTA"
+    val confidence: String = "ALTA",
+    val familyAnalysis: String? = null
 )
 
 class GeminiRepository {
@@ -208,7 +209,8 @@ class GeminiRepository {
                 paymentMethod = paymentMethod,
                 items = itemsList,
                 rawText = cleanJson,
-                confidence = "ALTA (Gemini 3.5 Flash)"
+                confidence = "ALTA (Gemini 3.5 Flash)",
+                familyAnalysis = obj.optString("familyAnalysis", "").takeIf { it.isNotBlank() }
             )
         } catch (e: Exception) {
             ScannedReceiptResult(
