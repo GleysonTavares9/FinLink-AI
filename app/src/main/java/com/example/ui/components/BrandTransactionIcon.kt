@@ -14,6 +14,8 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -52,26 +54,43 @@ fun BrandTransactionIcon(
     val c = category.lowercase(Locale.ROOT)
 
     Box(modifier = modifier.size(size)) {
-        // Ícone Principal de Marca ou Categoria
+
+            // Ícone Principal de Marca ou Categoria - Apple iOS 18 Light & Clean com Cores Pastel Vivas
+        val iconBg = when {
+            t.contains("netflix") -> Color(0xFF141414)
+            t.contains("spotify") -> Color(0xFF1DB954)
+            t.contains("google") -> Color(0xFFF8FAFC)
+            t.contains("mercadolivre") || t.contains("mercado livre") -> Color(0xFFFFF159)
+            t.contains("supermercado") || t.contains("epa") || t.contains("carrefour") || t.contains("bh") || c.contains("groceries") -> Color(0xFFFFF7ED) // Âmbar Pastel
+            t.contains("drogaria") || t.contains("farm") || c.contains("pharmacy") || c.contains("farmácia") -> Color(0xFFF0FDF4) // Verde Menta Pastel
+            c.contains("services") || c.contains("serviços") || t.contains("barbearia") || t.contains("jim") -> Color(0xFFEFF6FF) // Azul Céu Pastel
+            c.contains("shopping") || c.contains("clothing") || t.contains("cosmeti") -> Color(0xFFFAF5FF) // Lavanda Pastel
+            c.contains("eating out") || c.contains("restaurante") -> Color(0xFFFFF1F2) // Coral Pastel
+            c.contains("telecommunications") || t.contains("vero") || t.contains("bmb") -> Color(0xFFF0F9FF) // Cyan Pastel
+            isIncome -> Color(0xFFF0FDF4) // Esmeralda Pastel
+            t.contains("reserva") || c.contains("transfer - internal") -> Color(0xFFF1F5F9) // Slate Neutro Pastel
+            t.contains("pix") -> Color(0xFFF0FDFA) // Teal Pastel
+            else -> Color(0xFFF8FAFC)
+        }
+
+        val iconBorder = when {
+            t.contains("netflix") -> Color(0xFF262626)
+            t.contains("spotify") -> Color(0xFF1AA34A)
+            t.contains("supermercado") || t.contains("bh") || c.contains("groceries") -> Color(0xFFFFEDD5)
+            t.contains("drogaria") || c.contains("pharmacy") -> Color(0xFFDCFCE7)
+            c.contains("services") || t.contains("barbearia") || t.contains("jim") -> Color(0xFFDBEAFE)
+            c.contains("shopping") || t.contains("cosmeti") -> Color(0xFFF3E8FF)
+            c.contains("eating out") -> Color(0xFFFFE4E6)
+            isIncome -> Color(0xFFDCFCE7)
+            else -> Color(0xFFE2E8F0)
+        }
+
         Box(
             modifier = Modifier
                 .size(size)
                 .clip(CircleShape)
-                .background(
-                    when {
-                        t.contains("netflix") -> Color(0xFF0F0F0F)
-                        t.contains("spotify") -> Color(0xFF1DB954)
-                        t.contains("google") -> Color(0xFF1E293B)
-                        t.contains("mercadolivre") || t.contains("mercado livre") -> Color(0xFFFFF159)
-                        t.contains("amazon") || t.contains("prime") -> Color(0xFF131921)
-                        t.contains("drogaria") || t.contains("farm") || c.contains("pharmacy") || c.contains("farmácia") -> Color(0xFF1E293B)
-                        t.contains("supermercado") || t.contains("epa") || t.contains("carrefour") || t.contains("bh") -> Color(0xFF1E293B)
-                        t.contains("uber") || t.contains("99") -> Color(0xFF111111)
-                        isIncome -> Color(0xFF1E293B)
-                        else -> Color(0xFF1E293B) // Fundo dark grafite estilo Pierre
-                    }
-                )
-                .border(1.dp, Color(0xFF334155).copy(alpha = 0.4f), CircleShape),
+                .background(iconBg)
+                .border(1.dp, iconBorder, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             when {
@@ -85,27 +104,37 @@ fun BrandTransactionIcon(
                     SpotifyIcon(modifier = Modifier.size(size * 0.60f))
                 }
 
-                // GOOGLE: Letra "G" clássica de quatro cores ou design Google
+                // GOOGLE: Letra "G" clássica de quatro cores
                 t.contains("google") -> {
                     GoogleIcon(modifier = Modifier.size(size * 0.58f))
                 }
 
-                // FARMÁCIA / SAÚDE: Ícone ciano/verde água estilizado
+                // FARMÁCIA / SAÚDE: Ícone verde esmeralda
                 t.contains("drogaria") || t.contains("farm") || c.contains("pharmacy") || c.contains("farmácia") -> {
                     Icon(
                         imageVector = Icons.Default.LocalPharmacy,
                         contentDescription = null,
-                        tint = Color(0xFF2DD4BF), // Ciano esmeralda idêntico ao Pierre
+                        tint = Color(0xFF16A34A),
                         modifier = Modifier.size(size * 0.52f)
                     )
                 }
 
-                // SUPERMERCADO / ALIMENTAÇíO
+                // SUPERMERCADO / ALIMENTAÇÃO (ex: SUPERMERCADOS BH)
                 t.contains("supermercado") || t.contains("epa") || t.contains("carrefour") || t.contains("bh") || c.contains("groceries") -> {
                     Icon(
                         imageVector = Icons.Default.ShoppingCart,
                         contentDescription = null,
-                        tint = Color(0xFFF59E0B),
+                        tint = Color(0xFFEA580C), // Laranja Apple Vívido
+                        modifier = Modifier.size(size * 0.52f)
+                    )
+                }
+
+                // SERVIÇOS / BARBEARIA (ex: BARBEARIA DO CALADINHO, JIM.COM)
+                c.contains("services") || c.contains("serviços") || t.contains("barbearia") || t.contains("jim") -> {
+                    Icon(
+                        imageVector = Icons.Default.Work,
+                        contentDescription = null,
+                        tint = Color(0xFF2563EB), // Azul Real Vívido
                         modifier = Modifier.size(size * 0.52f)
                     )
                 }
@@ -115,25 +144,35 @@ fun BrandTransactionIcon(
                     Icon(
                         imageVector = Icons.Default.Restaurant,
                         contentDescription = null,
-                        tint = Color(0xFFF43F5E),
+                        tint = Color(0xFFE11D48), // Coral Rose Vívido
                         modifier = Modifier.size(size * 0.52f)
                     )
                 }
 
-                // COMPRAS / VESTUÁRIO
+                // COMPRAS / VESTUÁRIO (ex: PG *A & P COSMETI, MERCADOLIVRE)
                 c.contains("shopping") || c.contains("clothing") || t.contains("mercadolivre") -> {
                     Icon(
                         imageVector = Icons.Default.ShoppingBag,
                         contentDescription = null,
-                        tint = if (t.contains("mercadolivre")) Color(0xFF2D3277) else Color(0xFFA855F7),
+                        tint = if (t.contains("mercadolivre")) Color(0xFF2D3277) else Color(0xFF9333EA),
                         modifier = Modifier.size(size * 0.52f)
                     )
                 }
 
-                // TRANSFERÊNCIA / PIX / RESERVAS / DINHEIRO (Ícone de cédula estilo Pierre)
+                // RESERVA INTERNA / CAIXINHA
+                t.contains("reserva") || c.contains("transfer - internal") -> {
+                    Icon(
+                        imageVector = Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        tint = Color(0xFF64748B),
+                        modifier = Modifier.size(size * 0.52f)
+                    )
+                }
+
+                // TRANSFERÊNCIA / PIX / DINHEIRO
                 else -> {
                     CashBillIcon(
-                        tint = if (isIncome) Color(0xFF34D399) else Color(0xFF94A3B8),
+                        tint = if (isIncome) Color(0xFF16A34A) else Color(0xFF64748B),
                         modifier = Modifier.size(size * 0.54f)
                     )
                 }
@@ -296,7 +335,7 @@ fun CashBillIcon(tint: Color, modifier: Modifier = Modifier) {
 fun BankMiniBadge(bankName: String, modifier: Modifier = Modifier) {
     val b = bankName.lowercase(Locale.ROOT)
     val isMercadoPago = b.contains("mercado") || b.contains("mp")
-    val isNubank = b.contains("nu") || b.contains("nubank")
+    val isNubank = b.contains("nubank", ignoreCase = true) || b.contains("nuconta", ignoreCase = true) || b.equals("nu", ignoreCase = true)
     val isItau = b.contains("itau") || b.contains("itaú")
 
     val bg = when {
@@ -311,7 +350,7 @@ fun BankMiniBadge(bankName: String, modifier: Modifier = Modifier) {
             .size(16.dp)
             .clip(CircleShape)
             .background(bg)
-            .border(1.2.dp, Color(0xFF0A0A0A), CircleShape),
+            .border(1.5.dp, Color.White, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         if (isMercadoPago) {

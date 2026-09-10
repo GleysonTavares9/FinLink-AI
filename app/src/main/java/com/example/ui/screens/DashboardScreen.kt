@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,6 +15,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,6 +84,8 @@ import com.example.data.model.TransactionType
 import com.example.data.model.UnifiedTransaction
 import com.example.data.remote.supabase.AuthUiState
 import com.example.domain.model.BudgetAnalysis
+import com.example.domain.model.HouseholdCostReference
+import com.example.domain.model.HouseholdProfile
 import com.example.ui.components.BankLogoView
 import com.example.ui.components.BrandTransactionIcon
 import com.example.util.formatBr
@@ -106,6 +111,7 @@ fun DashboardScreen(
     connectedAccounts: List<OpenFinanceAccountEntity> = emptyList(),
     unifiedTransactions: List<UnifiedTransaction> = emptyList(),
     budgetAnalysis: BudgetAnalysis? = null,
+    householdProfile: HouseholdProfile? = null,
     authState: AuthUiState? = null,
     onNavigateToScan: () -> Unit,
     onNavigateToManual: () -> Unit,
@@ -137,6 +143,12 @@ fun DashboardScreen(
             listState.isScrollInProgress
         }
     }
+
+    // Transição contínua e suave da TopBar profissional
+    val topBarAlpha by animateFloatAsState(
+        targetValue = if (isScrolledDown) 1f else 0f,
+        label = "dash_topbar_alpha"
+    )
 
     val todayFormatted = remember {
         val sdf = SimpleDateFormat("EEEE, d 'de' MMMM", Locale.forLanguageTag("pt-BR"))
@@ -236,17 +248,32 @@ fun DashboardScreen(
         }
     }
 
-    // Faturas em Aberto no mês (Cartão de Crédito)
-    val totalOpenBills = remember(periodTransactions, cardAccounts) {
-        val txBills = periodTransactions.filter {
-            it.title.contains("Fatura", ignoreCase = true) ||
-            it.title.contains("Cartão", ignoreCase = true) ||
-            it.category.contains("Credit card", ignoreCase = true) ||
-            it.bankName.contains("Cartão", ignoreCase = true)
+    // Faturas em Aberto no mês (Cartão de Crédito) - Rigor Contábil
+    val totalOpenBills = remember(periodTransactions, cardAccounts, selectedPeriod) {
+        // Apenas transações que representam compras no cartão no período ou faturas a pagar
+        // NUNCA somar quitações/pagamentos recebidos passados ("Pagamento recebido") nem limites de crédito positivos
+        val cardExpenseTxs = periodTransactions.filter { tx ->
+            !tx.isInternalTransfer &&
+            tx.type != TransactionType.ENTRADA &&
+            !tx.title.contains("Pagamento recebido", ignoreCase = true) &&
+            (
+                tx.paymentMethod.contains("Cartão", ignoreCase = true) ||
+                tx.paymentMethod.contains("Crédito", ignoreCase = true) ||
+                tx.category.contains("Credit card", ignoreCase = true) ||
+                tx.title.contains("Fatura", ignoreCase = true) ||
+                cardAccounts.any { it.id == tx.accountId }
+            )
         }.sumOf { abs(it.amount) }
 
-        val accBills = cardAccounts.sumOf { abs(it.balance) }
-        if (accBills > 0.0) accBills else txBills
+        // Se houver conta de cartão com saldo estritamente DEVEDOR (< 0), usa a dívida real
+        // Saldos positivos (limite de crédito concedido de 6k ou 11k) NUNCA são faturas a pagar!
+        val cardDebtAccount = cardAccounts.sumOf { abs(it.balance) }
+
+        if (cardDebtAccount > 0.0) {
+            cardDebtAccount
+        } else {
+            cardExpenseTxs
+        }
     }
 
     // 3. Previsão de Gastos para o Fim do Mês (Projeção)
@@ -280,59 +307,30 @@ fun DashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 70.dp, bottom = 130.dp)
         ) {
             item {
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // CABEÇALHO COMPLETO EXPANDIDO (Data & Atalhos)
+                        // TÍTULO GRANDE EXPANDIDO COM DATA
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(iosBlue)
-                            )
-                            Text(
-                                text = "FINLINK AI • CONTA INTELIGENTE",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = iosBlue,
-                                fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = 0.8.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = todayFormatted,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = (-0.4).sp
-                            ),
-                            color = iosTextBlack
-                        )
-                    }
-
-                    // Atalhos do Topo
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButtonTop(icon = Icons.Default.AutoAwesome, tint = iosBlue, onClick = onNavigateToAi)
-                        IconButtonTop(icon = Icons.Default.FamilyRestroom, tint = iosTextBlack, onClick = onNavigateToHousehold)
-                        IconButtonTop(
-                            icon = if (authState is AuthUiState.Authenticated) Icons.Default.CloudDone else Icons.Default.CloudSync,
-                            tint = if (authState is AuthUiState.Authenticated) iosGreen else iosTextGray,
-                            onClick = onNavigateToAuth
-                        )
-                    }
+                Column(modifier = Modifier.padding(top = 4.dp)) {
+                    Text(
+                        text = "FinLink AI",
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        color = iosTextBlack,
+                        letterSpacing = (-0.8).sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = todayFormatted,
+                        fontSize = 13.sp,
+                        color = iosTextMuted,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
 
@@ -577,17 +575,19 @@ fun DashboardScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = if (isBalanceVisible) "-R$ ${totalOpenBills.formatBrNumber()}" else "••••",
+                                                        Text(
+                                text = if (isBalanceVisible) {
+                                    if (totalOpenBills > 0.0) "-R$ ${totalOpenBills.formatBrNumber()}" else "R$ 0,00"
+                                } else "••••••",
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Black,
-                                color = iosRed
+                                color = if (totalOpenBills > 0.0) iosRed else iosGreen
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Cartões de Crédito",
+                                text = if (totalOpenBills > 0.0) "Cartões de Crédito" else "Faturas em dia (Pagas)",
                                 fontSize = 11.sp,
-                                color = iosTextMuted
+                                color = if (totalOpenBills > 0.0) iosTextMuted else iosGreen
                             )
                         }
                     }
@@ -897,76 +897,96 @@ fun DashboardScreen(
         }
 
         // =========================================================================================
-        // RECOLHIMENTO INTELIGENTE: CABEÇALHO COMPACTO FIXADO NO TOPO AO DESLIZAR PARA BAIXO
+        // BOTÃO IA INTELIGENTE: RECOLHE E EXPANDE DE FORMA INTELIGENTE CONFORME A ROLAGEM
         // =========================================================================================
-        AnimatedVisibility(
-            visible = isScrolledDown,
-            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-            modifier = Modifier.align(Alignment.TopCenter)
+        
+        // =========================================================================================
+        // TOPBAR PROFISSIONAL NATIVA: TRANSIÇÃO CONTÍNUA DE VIDRO TRANSLÚCIDO AO ROLAR
+        // =========================================================================================
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter),
+            color = Color(0xF4FFFFFF).copy(alpha = topBarAlpha),
+            shadowElevation = (4 * topBarAlpha).dp,
+            border = androidx.compose.foundation.BorderStroke(
+                (0.6 * topBarAlpha).dp,
+                Color(0xFFE5E5EA).copy(alpha = topBarAlpha)
+            )
         ) {
-            Surface(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(10.dp, spotColor = Color(0x12000000)),
-                color = Color(0xF8FFFFFF),
-                border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = compactDateFormatted,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = iosBlue
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                // Lado Esquerdo: Identificação sutil ou Saldo compacto ao rolar
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (topBarAlpha > 0.3f) {
+                        Column {
                             Text(
-                                text = if (isBalanceVisible) "R$ ${totalCheckingBalance.formatBrNumber()}" else "R$ ••••••",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Black,
-                                color = iosTextBlack
+                                text = compactDateFormatted.uppercase(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = iosBlue
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            IconButton(
-                                onClick = { isBalanceVisible = !isBalanceVisible },
-                                modifier = Modifier.size(22.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = null,
-                                    tint = iosTextGray,
-                                    modifier = Modifier.size(15.dp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isBalanceVisible) "R$ ${totalCheckingBalance.formatBrNumber()}" else "R$ ••••••",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = iosTextBlack
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = { isBalanceVisible = !isBalanceVisible },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = null,
+                                        tint = iosTextGray,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                         }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(iosBlue)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "FINLINK AI",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = iosBlue,
+                                letterSpacing = 0.8.sp
+                            )
+                        }
                     }
+                }
 
-                    // Atalhos compactos mantidos no topo (Menus rápidos + Família + Nuvem)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        IconButtonTop(icon = Icons.Default.CameraAlt, tint = iosBlue, sizeDp = 34, onClick = onNavigateToScan)
-                        IconButtonTop(icon = Icons.Default.Edit, tint = iosTextBlack, sizeDp = 34, onClick = onNavigateToManual)
-                        IconButtonTop(icon = Icons.Default.FamilyRestroom, tint = iosTextBlack, sizeDp = 34, onClick = onNavigateToHousehold)
-                        IconButtonTop(
-                            icon = if (authState is AuthUiState.Authenticated) Icons.Default.CloudDone else Icons.Default.CloudSync,
-                            tint = if (authState is AuthUiState.Authenticated) iosGreen else iosTextGray,
-                            sizeDp = 34,
-                            onClick = onNavigateToAuth
-                        )
-                    }
+                // Lado Direito: Atalhos consistentes mantidos na mesma posição (IA + Família + Nuvem/Sync)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButtonTop(icon = Icons.Default.CameraAlt, tint = iosBlue, sizeDp = 34, onClick = onNavigateToScan)
+                    IconButtonTop(icon = Icons.Default.FamilyRestroom, tint = iosTextBlack, sizeDp = 34, onClick = onNavigateToHousehold)
+                    IconButtonTop(
+                        icon = if (authState is AuthUiState.Authenticated) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                        tint = if (authState is AuthUiState.Authenticated) iosGreen else iosTextGray,
+                        sizeDp = 34,
+                        onClick = onNavigateToAuth
+                    )
                 }
             }
         }
 
-        // =========================================================================================
-        // BOTÃO IA INTELIGENTE: RECOLHE E EXPANDE DE FORMA INTELIGENTE CONFORME A ROLAGEM
-        // =========================================================================================
         val aiPillWidth by animateDpAsState(
             targetValue = if (isScrolling || isScrolledDown) 50.dp else 220.dp,
             animationSpec = tween(300),

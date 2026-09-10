@@ -213,7 +213,7 @@ async function syncPluggyItem(itemId: string, apiKey: string, supabase: any, use
       id: acc.id,
       user_id: userId,
       item_id: itemId,
-      bank_name: item?.connector?.name || acc.name || "Banco Conectado",
+      bank_name: (item?.connector?.name?.includes("MeuPluggy") || String(item?.connector?.id) === "200") ? "Mercado Pago" : (item?.connector?.name || acc.name || "Mercado Pago"),
       bank_code: String(item?.connector?.id || "000"),
       account_type: acc.subtype || acc.type || "Conta Corrente",
       account_number: acc.number || "0000",
@@ -262,15 +262,21 @@ async function syncPluggyItem(itemId: string, apiKey: string, supabase: any, use
       console.log(`[Pluggy v2] Conta ${acc.id}: ${txList.length} transacoes encontradas`);
 
             // Preparar payloads em batch para upsert eficiente
-      const txPayloads = txList.map((tx: any) => {
+            const txPayloads = txList.map((tx: any) => {
         const rawAmt = tx.amount || 0;
         // Pluggy v2: se type for CREDIT ou categoria indicar receita -> CREDIT
         const isCredit = tx.type === "CREDIT" || (!tx.type && rawAmt > 0);
+        let desc = tx.description || "Transação Bancária";
+        const instNum = tx.creditCardMetadata?.installmentNumber;
+        const totalInst = tx.creditCardMetadata?.totalInstallments;
+        if (instNum && totalInst && totalInst > 1 && !desc.includes("Parcela") && !desc.includes("/")) {
+          desc = `${desc} (Parcela ${instNum} de ${totalInst})`;
+        }
         return {
           id: tx.id,
           user_id: userId,
           account_id: acc.id,
-          description: tx.description || "Transação Bancária",
+          description: desc,
           amount: Math.abs(rawAmt),
           payment_type: isCredit ? "CREDIT" : "DEBIT",
           transaction_date: tx.date ? tx.date.split("T")[0] : new Date().toISOString().split("T")[0],

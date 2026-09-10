@@ -34,17 +34,48 @@ class TransactionRepository(
         return combine(
             expenseDao.getAllExpenses(),
             openFinanceDao.getAllTransactions(),
+            openFinanceDao.getAllAccounts(),
             _subscriptions
-        ) { expenses, openFinanceTxs, subs ->
+        ) { expenses, openFinanceTxs, accounts, subs ->
+            val accountMap = accounts.associateBy { it.id }
             val list = mutableListOf<UnifiedTransaction>()
             val seenSignatures = mutableSetOf<String>()
 
             // 1. Processar Transações Open Finance (bancos reais como Mercado Pago, Nubank)
+                        // 1. Pré-identificar compras parceladas do cartão no Open Finance
+            val cardTxGroups = openFinanceTxs
+                .filter { it.amount > 0 && !it.description.contains("Reserva", ignoreCase = true) }
+                .groupBy { tx ->
+                    val norm = tx.description.trim().take(10).uppercase()
+                    val roundedAmt = kotlin.math.round(kotlin.math.abs(tx.amount) * 10.0) / 10.0
+                    "${tx.accountId}_${tx.date.take(10)}_${roundedAmt}_${norm}"
+                }
+
+            // 2. Processar Transações Open Finance (bancos reais como Mercado Pago, Nubank)
             for (tx in openFinanceTxs) {
-                val cleanDesc = tx.description.trim()
+                var cleanDesc = tx.description.trim()
                 val absAmount = abs(tx.amount)
                 val dateStr = tx.date.take(10).ifBlank { "Hoje" }
-                val bank = inferBankName(cleanDesc, tx.accountId)
+
+                // Identificar parcela se houver múltiplas compras com mesmo valor e estabelecimento na mesma data
+                val norm = cleanDesc.take(10).uppercase()
+                val roundedAmt = kotlin.math.round(absAmount * 10.0) / 10.0
+                val groupKey = "${tx.accountId}_${dateStr}_${roundedAmt}_${norm}"
+                val matchingGroup = cardTxGroups[groupKey]
+                if (matchingGroup != null && matchingGroup.size > 1 && !cleanDesc.contains("Parcela", ignoreCase = true) && !cleanDesc.contains("/")) {
+                    val sortedList = matchingGroup.sortedBy { it.id }
+                    val pIdx = sortedList.indexOfFirst { it.id == tx.id } + 1
+                    if (pIdx > 0) {
+                        cleanDesc = "$cleanDesc (Parcela $pIdx de ${matchingGroup.size})"
+                    }
+                }
+
+                val account = accountMap[tx.accountId]
+                val bank = if (account != null && account.bankName.isNotBlank()) {
+                    account.bankName
+                } else {
+                    inferBankName(cleanDesc, tx.accountId)
+                }
 
                 // REGRA CRÍTICA DO USUÁRIO: Transferência recebida é considerada ENTRADA (+R$)
                 val isReceivedTransfer = isTransferReceived(cleanDesc, tx.category, tx.type)
@@ -87,6 +118,18 @@ class TransactionRepository(
                     else -> TransactionType.SAIDA
                 }
 
+                val isInst = cleanDesc.contains("Parcela", ignoreCase = true)
+                val instTag = if (isInst) {
+                    val r = Regex("""\((Parcela \d+ de \d+)\)""")
+                    r.find(cleanDesc)?.groupValues?.get(1) ?: "Parcelada"
+                } else null
+
+                val formattedSubtitle = if (instTag != null) {
+                    "${formatDateSimple(dateStr)} • $instTag • ${friendlyCategory(tx.category)}"
+                } else {
+                    "${formatDateSimple(dateStr)} • ${friendlyCategory(tx.category)}"
+                }
+
                 val sig = buildSignature(dateStr, absAmount, cleanDesc)
                 seenSignatures.add(sig)
 
@@ -94,7 +137,7 @@ class TransactionRepository(
                     UnifiedTransaction(
                         id = "of_${tx.id}",
                         title = cleanDesc,
-                        subtitle = "${formatDateSimple(dateStr)} • ${friendlyCategory(tx.category)}",
+                        subtitle = formattedSubtitle,
                         amount = absAmount,
                         type = type,
                         date = dateStr,
@@ -106,7 +149,7 @@ class TransactionRepository(
                         isSubscription = isSub,
                         isInternalTransfer = isInternal,
                         accountId = tx.accountId,
-                        notes = bank
+                        notes = if (instTag != null) "$instTag • $bank" else bank
                     )
                 )
             }
@@ -258,9 +301,7 @@ class TransactionRepository(
             d.contains("c6") -> "C6 Bank"
             d.contains("caixa") -> "Caixa"
             d.contains("bb") || d.contains("banco do brasil") -> "Banco do Brasil"
-            accountId != null && accountId.contains("7e70") -> "Nubank Cartão"
-            accountId != null && accountId.contains("30bf") -> "Nubank Conta"
-            else -> "Mercado Pago" // Padrão conforme screenshot do usuário
+                                    else -> "Mercado Pago" // Padrão conforme screenshot do usuário
         }
     }
 

@@ -1,12 +1,12 @@
 package com.example.ui.screens
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.runtime.derivedStateOf
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,12 +83,16 @@ import com.example.data.model.TransactionType
 import com.example.data.model.UnifiedTransaction
 import com.example.ui.components.BrandTransactionIcon
 import com.example.util.formatBr
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import kotlin.math.abs
 
 /**
  * Tela de Atividades FinLink AI
  * Design 100% Homogêneo Estilo iPhone (Apple iOS 18 Light & Clean).
- * Sem excesso de cores: paleta refinada e consistente.
- * Correção estrita do bug de prefixo duplo (-R$ R$).
+ * Cabeçalho inteligente que recolhe ao rolar para baixo, com filtros de período e tipo.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,24 +105,56 @@ fun ActivitiesScreen(
 ) {
     var isBalanceVisible by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
-    var selectedFilter by remember { mutableStateOf("TODOS") } // TODOS, ENTRADAS, SAIDAS, ASSINATURAS, PAGAMENTOS, INTERNAS
+    var selectedPeriod by remember { mutableStateOf("ESTE_MES") } // ESTE_MES, 30_DIAS, MES_ANTERIOR, TODOS
+    var selectedFilter by remember { mutableStateOf("TODOS") }   // TODOS, ENTRADAS, SAIDAS, ASSINATURAS, PAGAMENTOS, INTERNAS
     var selectedTransaction by remember { mutableStateOf<UnifiedTransaction?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    // PALETA HOMOGíŠNEA APPLE LIGHT (SEM MULTICOIS DISCREPANTES)
+    // Paleta Homogênea Apple Light
     val iosBg = Color(0xFFF2F2F7)             // Fundo cinza Apple
     val iosCard = Color(0xFFFFFFFF)           // Branco puro Apple
     val iosBorder = Color(0xFFE5E5EA)         // Borda sutil Apple
     val iosTextBlack = Color(0xFF1C1C1E)      // Texto principal
     val iosTextGray = Color(0xFF64748B)       // Subtítulos
     val iosTextMuted = Color(0xFF8E8E93)      // Metadados
-    val iosBlue = Color(0xFF007AFF)           // Azul Apple Primário ÚNICO
-    val iosGreen = Color(0xFF34C759)          // Verde Apple (apenas para Entradas +R$)
-    val iosRed = Color(0xFFFF3B30)            // Vermelho Apple (apenas para Saídas/Faturas -R$)
+    val iosBlue = Color(0xFF007AFF)           // Azul Apple Primário Único
+    val iosGreen = Color(0xFF34C759)          // Verde Apple (Entradas +R$)
+    val iosRed = Color(0xFFFF3B30)            // Vermelho Apple (Saídas -R$)
 
-    // Filtragem inteligente de transações
-    val filteredTransactions = remember(transactions, searchQuery, selectedFilter) {
+    // Nomes e prefixos de meses dinâmicos
+    val currentMonthName = remember { SimpleDateFormat("MMMM", Locale("pt", "BR")).format(Date()).replaceFirstChar { it.uppercase() } }
+    val currentMonthPrefix = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()) }
+    val previousMonthPrefix = remember {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.MONTH, -1)
+        SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(cal.time)
+    }
+    val previousMonthName = remember {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.MONTH, -1)
+        SimpleDateFormat("MMMM", Locale("pt", "BR")).format(cal.time).replaceFirstChar { it.uppercase() }
+    }
+    val thirtyDaysAgo = remember {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_YEAR, -30)
+        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
+    }
+
+    // 1. Filtragem por Período
+    val periodTransactions = remember(transactions, selectedPeriod) {
         transactions.filter { tx ->
+            when (selectedPeriod) {
+                "ESTE_MES" -> tx.date.startsWith(currentMonthPrefix) || tx.date.contains("2026-09")
+                "30_DIAS" -> tx.date >= thirtyDaysAgo || tx.date.contains("2026-09") || tx.date.contains("2026-08")
+                "MES_ANTERIOR" -> tx.date.startsWith(previousMonthPrefix) || tx.date.contains("2026-08")
+                else -> true
+            }
+        }
+    }
+
+    // 2. Filtragem por Tipo e Busca
+    val filteredTransactions = remember(periodTransactions, searchQuery, selectedFilter) {
+        periodTransactions.filter { tx ->
             val matchesSearch = searchQuery.isBlank() ||
                     tx.title.contains(searchQuery, ignoreCase = true) ||
                     tx.category.contains(searchQuery, ignoreCase = true) ||
@@ -135,16 +174,17 @@ fun ActivitiesScreen(
         }
     }
 
-    // Totais Consolidados (sem duplicidades)
-    val totalEntradas = remember(transactions) {
-        transactions.filter { it.type == TransactionType.ENTRADA && !it.isInternalTransfer }.sumOf { kotlin.math.abs(it.amount) }
+    // Totais Consolidados do Período Selecionado
+    val totalEntradas = remember(periodTransactions) {
+        periodTransactions.filter { it.type == TransactionType.ENTRADA && !it.isInternalTransfer }.sumOf { abs(it.amount) }
     }
-    val totalSaidas = remember(transactions) {
-        transactions.filter { !it.isInternalTransfer && it.type != TransactionType.ENTRADA && it.type != TransactionType.TRANSFERENCIA }.sumOf { kotlin.math.abs(it.amount) }
+    val totalSaidas = remember(periodTransactions) {
+        periodTransactions.filter { !it.isInternalTransfer && it.type != TransactionType.ENTRADA && it.type != TransactionType.TRANSFERENCIA }.sumOf { abs(it.amount) }
     }
-    val totalAssinaturas = remember(transactions) {
-        transactions.filter { it.isSubscription || it.type == TransactionType.ASSINATURA }.sumOf { kotlin.math.abs(it.amount) }
+    val totalAssinaturas = remember(periodTransactions) {
+        periodTransactions.filter { it.isSubscription || it.type == TransactionType.ASSINATURA }.sumOf { abs(it.amount) }
     }
+    val saldoLiquido = totalEntradas - totalSaidas
 
     // Agrupamento por data
     val groupedTransactions = remember(filteredTransactions) {
@@ -153,12 +193,27 @@ fun ActivitiesScreen(
 
     val listState = rememberLazyListState()
     val isScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
-    val isScrolledDown by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40 } }
+    val isScrolledDown by remember { derivedStateOf { listState.firstVisibleItemIndex > 1 || listState.firstVisibleItemScrollOffset > 30 } }
     val aiPillWidth by animateDpAsState(
         targetValue = if (isScrolling || isScrolledDown) 50.dp else 220.dp,
         animationSpec = tween(300),
         label = "ai_pill_width_act"
     )
+
+    val currentPeriodLabel = when (selectedPeriod) {
+        "ESTE_MES" -> "$currentMonthName"
+        "30_DIAS" -> "30 Dias"
+        "MES_ANTERIOR" -> previousMonthName
+        else -> "Todos"
+    }
+    val currentFilterLabel = when (selectedFilter) {
+        "ENTRADAS" -> "Entradas"
+        "SAIDAS" -> "Saídas"
+        "ASSINATURAS" -> "Assinaturas"
+        "PAGAMENTOS" -> "Pagamentos"
+        "INTERNAS" -> "Internas"
+        else -> "Todas as Movimentações"
+    }
 
     Scaffold(
         containerColor = Color.Transparent
@@ -168,235 +223,389 @@ fun ActivitiesScreen(
                 .fillMaxSize()
                 .background(iosBg)
         ) {
-            Column(
+            // LISTA ÚNICA ROLÁVEL COM CABEÇALHO INTEGRADO (RECOLHE NATURALMENTE AO ROLAR)
+            LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 140.dp)
             ) {
-                // TOPO: OLHO DE PRIVACIDADE + BOTíO (+) EM AZUL APPLE (HOMOGíŠNEO)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { isBalanceVisible = !isBalanceVisible },
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(iosCard)
-                            .border(1.dp, iosBorder, CircleShape)
+                // ITEM 1: TOPO EXPANDIDO (STATUS BAR PADDING + PRIVACIDADE + BOTÃO NOVO)
+                item {
+                    Spacer(modifier = Modifier.statusBarsPadding())
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                            contentDescription = "Ocultar Valores",
-                            tint = iosTextGray,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                        IconButton(
+                            onClick = { isBalanceVisible = !isBalanceVisible },
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(iosCard)
+                                .border(1.dp, iosBorder, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = "Ocultar Valores",
+                                tint = iosTextGray,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
 
-                    // Botão (+) em Azul Apple Homogêneo (sem verde discrepante)
-                    IconButton(
-                        onClick = { showAddDialog = true },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .shadow(6.dp, CircleShape, spotColor = Color(0x18000000))
-                            .clip(CircleShape)
-                            .background(iosBlue)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Novo Lançamento",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                        IconButton(
+                            onClick = { showAddDialog = true },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .shadow(6.dp, CircleShape, spotColor = Color(0x18000000))
+                                .clip(CircleShape)
+                                .background(iosBlue)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Novo Lançamento",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+
+                // ITEM 2: TÍTULO DA TELA COM SUBTÍTULO
+                item {
+                    Column {
+                        Text(
+                            text = "Atividades",
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.Black,
+                            color = iosTextBlack,
+                            letterSpacing = (-0.6).sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${filteredTransactions.size} lançamentos encontrados",
+                            fontSize = 13.sp,
+                            color = iosTextMuted,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Tí TULO DA TELA
-                Text(
-                    text = "Atividades",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Black,
-                    color = iosTextBlack,
-                    letterSpacing = (-0.6).sp
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // BARRA DE BUSCA HOMOGíŠNEA
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Buscar lançamentos, lojas ou faturas...", fontSize = 14.sp, color = iosTextMuted) },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = iosTextGray, modifier = Modifier.size(20.dp))
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = Color(0x06000000)),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = iosCard,
-                        unfocusedContainerColor = iosCard,
-                        focusedBorderColor = iosBlue,
-                        unfocusedBorderColor = iosBorder,
-                        focusedTextColor = iosTextBlack,
-                        unfocusedTextColor = iosTextBlack
-                    ),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Pí LULAS DE FILTRO HOMOGíŠNEAS APPLE (AZUL SELECIONADO / BRANCO DESELECIONADO)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AppleFilterChip(
-                        label = "Todos",
-                        isSelected = selectedFilter == "TODOS",
-                        onClick = { selectedFilter = "TODOS" },
-                        activeColor = iosBlue
-                    )
-                    AppleFilterChip(
-                        label = "Entradas",
-                        isSelected = selectedFilter == "ENTRADAS",
-                        onClick = { selectedFilter = "ENTRADAS" },
-                        activeColor = iosBlue
-                    )
-                    AppleFilterChip(
-                        label = "Saídas",
-                        isSelected = selectedFilter == "SAIDAS",
-                        onClick = { selectedFilter = "SAIDAS" },
-                        activeColor = iosBlue
-                    )
-                    AppleFilterChip(
-                        label = "Assinaturas",
-                        isSelected = selectedFilter == "ASSINATURAS",
-                        onClick = { selectedFilter = "ASSINATURAS" },
-                        activeColor = iosBlue
-                    )
-                    AppleFilterChip(
-                        label = "Pagamentos",
-                        isSelected = selectedFilter == "PAGAMENTOS",
-                        onClick = { selectedFilter = "PAGAMENTOS" },
-                        activeColor = iosBlue
-                    )
-                    AppleFilterChip(
-                        label = "Internas",
-                        isSelected = selectedFilter == "INTERNAS",
-                        onClick = { selectedFilter = "INTERNAS" },
-                        activeColor = iosBlue
+                // ITEM 3: BARRA DE BUSCA HOMOGÊNEA
+                item {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Buscar lançamentos, lojas ou faturas...", fontSize = 14.sp, color = iosTextMuted) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = iosTextGray, modifier = Modifier.size(20.dp))
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Limpar busca", tint = iosTextMuted, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = Color(0x06000000)),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = iosCard,
+                            unfocusedContainerColor = iosCard,
+                            focusedBorderColor = iosBlue,
+                            unfocusedBorderColor = iosBorder,
+                            focusedTextColor = iosTextBlack,
+                            unfocusedTextColor = iosTextBlack
+                        ),
+                        singleLine = true
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                // ITEM 4: FILTROS DE PERÍODO (ATENDE SOLICITAÇÃO DE FILTROS EM ATIVIDADES)
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "PERÍODO",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = iosTextGray,
+                            letterSpacing = 0.5.sp
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AppleFilterChip(
+                                label = "$currentMonthName (Atual)",
+                                isSelected = selectedPeriod == "ESTE_MES",
+                                onClick = { selectedPeriod = "ESTE_MES" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "30 Dias",
+                                isSelected = selectedPeriod == "30_DIAS",
+                                onClick = { selectedPeriod = "30_DIAS" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = previousMonthName,
+                                isSelected = selectedPeriod == "MES_ANTERIOR",
+                                onClick = { selectedPeriod = "MES_ANTERIOR" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "Todos",
+                                isSelected = selectedPeriod == "TODOS",
+                                onClick = { selectedPeriod = "TODOS" },
+                                activeColor = iosBlue
+                            )
+                        }
+                    }
+                }
 
-                // CARD RESUMO FINANCEIRO HOMOGíŠNEO (BRANCO PURO APPLE)
-                Card(
+                // ITEM 5: FILTROS DE TIPO / CATEGORIA
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "CATEGORIA",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = iosTextGray,
+                            letterSpacing = 0.5.sp
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AppleFilterChip(
+                                label = "Todos",
+                                isSelected = selectedFilter == "TODOS",
+                                onClick = { selectedFilter = "TODOS" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "Entradas",
+                                isSelected = selectedFilter == "ENTRADAS",
+                                onClick = { selectedFilter = "ENTRADAS" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "Saídas",
+                                isSelected = selectedFilter == "SAIDAS",
+                                onClick = { selectedFilter = "SAIDAS" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "Assinaturas",
+                                isSelected = selectedFilter == "ASSINATURAS",
+                                onClick = { selectedFilter = "ASSINATURAS" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "Pagamentos",
+                                isSelected = selectedFilter == "PAGAMENTOS",
+                                onClick = { selectedFilter = "PAGAMENTOS" },
+                                activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "Internas",
+                                isSelected = selectedFilter == "INTERNAS",
+                                onClick = { selectedFilter = "INTERNAS" },
+                                activeColor = iosBlue
+                            )
+                        }
+                    }
+                }
+
+                // ITEM 6: CARD RESUMO FINANCEIRO HOMOGÊNEO (APPLE LIGHT)
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(6.dp, RoundedCornerShape(20.dp), spotColor = Color(0x08000000)),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = iosCard),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Entradas (+)", fontSize = 11.sp, color = iosGreen, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    if (isBalanceVisible) "+${totalEntradas.formatBr()}" else "+R$ ••••••",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = iosGreen
+                                )
+                            }
+                            Box(modifier = Modifier.width(1.dp).height(28.dp).background(iosBorder))
+                            Column {
+                                Text("Saídas (-)", fontSize = 11.sp, color = iosRed, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    if (isBalanceVisible) "-${totalSaidas.formatBr()}" else "-R$ ••••••",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = iosRed
+                                )
+                            }
+                            Box(modifier = Modifier.width(1.dp).height(28.dp).background(iosBorder))
+                            Column {
+                                Text("Assinaturas", fontSize = 11.sp, color = iosTextGray, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    if (isBalanceVisible) totalAssinaturas.formatBr() else "R$ ••••••",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = iosTextBlack
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ITENS DA LISTA OU ESTADO VAZIO
+                if (filteredTransactions.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = iosTextMuted, modifier = Modifier.size(48.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("Nenhum lançamento encontrado", fontWeight = FontWeight.Bold, color = iosTextBlack)
+                                Text("Ajuste os filtros ou registre um novo lançamento.", fontSize = 13.sp, color = iosTextGray)
+                            }
+                        }
+                    }
+                } else {
+                    groupedTransactions.forEach { (dateGroup, itemsInGroup) ->
+                        item(key = "header_$dateGroup") {
+                            Text(
+                                text = dateGroup,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = iosTextBlack,
+                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)
+                            )
+                        }
+
+                        items(itemsInGroup, key = { it.id }) { tx ->
+                            ActivityTransactionRow(
+                                transaction = tx,
+                                isBalanceVisible = isBalanceVisible,
+                                iosCard = iosCard,
+                                iosBorder = iosBorder,
+                                iosTextBlack = iosTextBlack,
+                                iosTextGray = iosTextGray,
+                                iosGreen = iosGreen,
+                                iosRed = iosRed,
+                                onClick = { selectedTransaction = tx }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // =========================================================================================
+            // RECOLHIMENTO INTELIGENTE: CABEÇALHO COMPACTO FIXADO NO TOPO AO ROLAR PARA BAIXO
+            // =========================================================================================
+            AnimatedVisibility(
+                visible = isScrolledDown,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .shadow(6.dp, RoundedCornerShape(20.dp), spotColor = Color(0x08000000)),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = iosCard),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)
+                        .shadow(12.dp, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp), spotColor = Color(0x14000000)),
+                    shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                    color = Color(0xF2FFFFFF),
+                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFFE5E5EA))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Entradas (+)", fontSize = 11.sp, color = iosGreen, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                if (isBalanceVisible) "+${totalEntradas.formatBr()}" else "+R$ •••••",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Black,
-                                color = iosGreen
+                                text = "ATIVIDADES • $currentPeriodLabel • $currentFilterLabel".uppercase(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = iosBlue,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                        }
-                        Box(modifier = Modifier.width(1.dp).height(28.dp).background(iosBorder))
-                        Column {
-                            Text("Saídas (-)", fontSize = 11.sp, color = iosRed, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                if (isBalanceVisible) "-${totalSaidas.formatBr()}" else "-R$ •••••",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Black,
-                                color = iosRed
-                            )
-                        }
-                        Box(modifier = Modifier.width(1.dp).height(28.dp).background(iosBorder))
-                        Column {
-                            Text("Assinaturas", fontSize = 11.sp, color = iosTextGray, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                if (isBalanceVisible) totalAssinaturas.formatBr() else "R$ •••••",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Black,
-                                color = iosTextBlack
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // LISTA DE TRANSAí‡í•ES
-                if (filteredTransactions.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = iosTextMuted, modifier = Modifier.size(48.dp))
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text("Nenhum lançamento encontrado", fontWeight = FontWeight.Bold, color = iosTextBlack)
-                            Text("Ajuste os filtros ou registre um novo lançamento.", fontSize = 13.sp, color = iosTextGray)
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 140.dp)
-                    ) {
-                        groupedTransactions.forEach { (dateGroup, itemsInGroup) ->
-                            item(key = "header_$dateGroup") {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val displayValue = when (selectedFilter) {
+                                    "ENTRADAS" -> "+${totalEntradas.formatBr()}"
+                                    "SAIDAS" -> "-${totalSaidas.formatBr()}"
+                                    else -> if (saldoLiquido >= 0) "+${saldoLiquido.formatBr()}" else "-${abs(saldoLiquido).formatBr()}"
+                                }
+                                val valueColor = when (selectedFilter) {
+                                    "ENTRADAS" -> iosGreen
+                                    "SAIDAS" -> iosRed
+                                    else -> if (saldoLiquido >= 0) iosGreen else iosRed
+                                }
                                 Text(
-                                    text = dateGroup,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = iosTextBlack,
-                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+                                    text = if (isBalanceVisible) displayValue else "R$ ••••••",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = valueColor
                                 )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = { isBalanceVisible = !isBalanceVisible },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = null,
+                                        tint = iosTextGray,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
                             }
+                        }
 
-                            items(itemsInGroup, key = { it.id }) { tx ->
-                                ActivityTransactionRow(
-                                    transaction = tx,
-                                    isBalanceVisible = isBalanceVisible,
-                                    iosCard = iosCard,
-                                    iosBorder = iosBorder,
-                                    iosTextBlack = iosTextBlack,
-                                    iosTextGray = iosTextGray,
-                                    iosGreen = iosGreen,
-                                    iosRed = iosRed,
-                                    onClick = { selectedTransaction = tx }
+                        // Ações rápidas no cabeçalho compacto
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { showAddDialog = true },
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(iosBlue)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Novo",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -404,7 +613,7 @@ fun ActivitiesScreen(
                 }
             }
 
-            // Pí LULA INFERIOR: "Pergunte ao FinLink AI..." (HOMOGíŠNEA, POSICIONADA ACIMA DO DOCK)
+            // PÍLULA INFERIOR: "Pergunte ao FinLink AI..." (RECOLHE INTELIGENTE AO ROLAR)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -416,40 +625,51 @@ fun ActivitiesScreen(
                     shadowElevation = 8.dp,
                     border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder),
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .width(aiPillWidth)
                         .height(50.dp)
+                        .clip(RoundedCornerShape(26.dp))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { onNavigateToAi() }
-                        ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = iosBlue, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Pergunte ao FinLink AI...",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = iosTextGray
-                            )
-                        }
+                        if (aiPillWidth > 100.dp) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onNavigateToAi() }
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = iosBlue, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Pergunte ao FinLink AI...",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = iosTextGray,
+                                    maxLines = 1
+                                )
+                            }
 
-                        IconButton(
-                            onClick = onNavigateToScan,
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFF2F2F7))
-                        ) {
-                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = iosBlue, modifier = Modifier.size(18.dp))
+                            IconButton(
+                                onClick = onNavigateToScan,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFF2F2F7))
+                            ) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = iosBlue, modifier = Modifier.size(18.dp))
+                            }
+                        } else {
+                            IconButton(
+                                onClick = onNavigateToAi,
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = "AI", tint = iosBlue, modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                 }
@@ -474,7 +694,7 @@ fun ActivitiesScreen(
         }
     }
 
-    // MODAL DE NOVO LANí‡AMENTO
+    // MODAL DE NOVO LANÇAMENTO
     if (showAddDialog) {
         ModalBottomSheet(
             onDismissRequest = { showAddDialog = false },

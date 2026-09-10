@@ -160,7 +160,6 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(innerPadding)
-                                .then(if (currentRoute != "splash") Modifier.padding(bottom = 80.dp) else Modifier)
                         ) {
                             composable("splash") {
                                 SplashScreen(
@@ -181,6 +180,7 @@ class MainActivity : ComponentActivity() {
                                     connectedAccounts = connectedAccounts,
                                     unifiedTransactions = unifiedTransactions,
                                     budgetAnalysis = budgetAnalysis,
+                                    householdProfile = householdProfile,
                                     authState = authState,
                                     isSyncing = isSyncing,
                                     lastSyncTime = lastSyncTime,
@@ -678,7 +678,7 @@ fun IosMenuItem(
             .shadow(4.dp, RoundedCornerShape(16.dp), spotColor = Color(0x0A000000)),
         shape = RoundedCornerShape(16.dp),
         color = Color.White,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E5EA))
+        border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xD9E5E5EA))
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -738,8 +738,8 @@ fun IosFloatingDock(
             .fillMaxWidth()
             .shadow(16.dp, RoundedCornerShape(32.dp), spotColor = Color(0x14000000)),
         shape = RoundedCornerShape(32.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xF4FFFFFF)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E5EA))
+        colors = CardDefaults.cardColors(containerColor = Color(0xEEFFFFFF)),
+        border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xD9E5E5EA))
     ) {
         Row(
             modifier = Modifier
