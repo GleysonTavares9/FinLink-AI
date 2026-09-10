@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -257,7 +258,21 @@ fun ActivitiesScreen(
                             )
                         }
 
-                        IconButton(
+                            IconButton(
+                                onClick = onNavigateToAi,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF64748B))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "IA",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                                                    IconButton(
                             onClick = { showAddDialog = true },
                             modifier = Modifier
                                 .size(44.dp)
@@ -595,6 +610,20 @@ fun ActivitiesScreen(
                         // Ações rápidas no cabeçalho compacto
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
+                                onClick = onNavigateToAi,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF64748B))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "IA",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                                                        IconButton(
                                 onClick = { showAddDialog = true },
                                 modifier = Modifier
                                     .size(34.dp)
@@ -613,67 +642,6 @@ fun ActivitiesScreen(
                 }
             }
 
-            // PÍLULA INFERIOR: "Pergunte ao FinLink AI..." (RECOLHE INTELIGENTE AO ROLAR)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 85.dp, start = 16.dp, end = 16.dp)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(26.dp),
-                    color = iosCard,
-                    shadowElevation = 8.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder),
-                    modifier = Modifier
-                        .width(aiPillWidth)
-                        .height(50.dp)
-                        .clip(RoundedCornerShape(26.dp))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (aiPillWidth > 100.dp) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { onNavigateToAi() }
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = iosBlue, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Pergunte ao FinLink AI...",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = iosTextGray,
-                                    maxLines = 1
-                                )
-                            }
-
-                            IconButton(
-                                onClick = onNavigateToScan,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFF2F2F7))
-                            ) {
-                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = iosBlue, modifier = Modifier.size(18.dp))
-                            }
-                        } else {
-                            IconButton(
-                                onClick = onNavigateToAi,
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = "AI", tint = iosBlue, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 

@@ -130,7 +130,10 @@ class GeminiProvider(
               "items": ["1x Item Descrição - R$ 10.00", "2x Item Descrição - R$ 15.00"],
               "confidence": "ALTA (SEFAZ Oficial)",\n              "familyAnalysis": "Sua anÃ¡lise do suprimento familiar baseada na compra (Opcional)"\n            }
             Atenção crítica: o campo totalAmount DEVE ser o valor total da nota em número decimal com ponto (ex: 89.50).
-            Se houver \'Contexto Familiar\', use-o para gerar a anÃ¡lise de suprimento em \'familyAnalysis\'.\n            Retorne estritamente o JSON.\n\n            Contexto Familiar (se houver): ${householdContext ?: "Nenhum"}
+            Se houver \'Contexto Familiar\', use-o para gerar a anÃ¡lise de suprimento em \'familyAnalysis\'.\n            Retorne estritamente o JSON.\n
+            MUITO IMPORTANTE:
+            Se a imagem OU texto nÃ£o for um cupom fiscal, nota fiscal, recibo de pagamento ou nfce legÃ­vel, VOCÃŠ DEVE OBRIGATORIAMENTE retornar o valor totalAmount como 0.0 e a lista items VAZIA. NÃƒO INVENTE PRODUTOS OU VALORES se nÃ£o estiverem claramente na imagem.
+\n            Contexto Familiar (se houver): ${householdContext ?: "Nenhum"}
 
             Conteúdo da Nota/Cupom:
             ${text.take(12000)}
