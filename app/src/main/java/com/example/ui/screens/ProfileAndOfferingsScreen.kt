@@ -6,6 +6,11 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -286,7 +291,7 @@ fun ProfileAndOfferingsScreen(
 
     val scrollState = rememberScrollState()
     val isScrolledPastAvatar by remember {
-        derivedStateOf { scrollState.value > 140 }
+        derivedStateOf { scrollState.value > 100 }
     }
     val headerBgAlpha by remember {
         derivedStateOf { (scrollState.value / 100f).coerceIn(0f, 1f) }
@@ -306,8 +311,52 @@ fun ProfileAndOfferingsScreen(
                     .fillMaxSize()
                     .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp)
-                    .padding(top = 68.dp, bottom = 100.dp)
+                    .padding(bottom = 100.dp)
             ) {
+                Spacer(modifier = Modifier.statusBarsPadding())
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // CABEÇALHO SUPERIOR NATURAL (QUANDO NÃO RECOLHIDO)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF2F2F7))
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Voltar",
+                            tint = iosTextBlack,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column {
+                        Text(
+                            text = "Perfil e Configurações",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Black,
+                            color = iosTextBlack,
+                            letterSpacing = (-0.5).sp
+                        )
+                        Text(
+                            text = "Gerencie seus dados, limites e preferências",
+                            fontSize = 13.sp,
+                            color = iosTextGray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
                 // CARD PRINCIPAL DO USUÁRIO (ESTILO APPLE COM FOTO GOOGLE)
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -889,119 +938,105 @@ fun ProfileAndOfferingsScreen(
                         // =========================================================================================
             // CABEÇALHO SUPERIOR PROFISSIONAL FLUIDO (ESTILO APPLE SETTINGS NATIVO)
             // =========================================================================================
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter),
-                color = Color(0xF8FFFFFF).copy(alpha = headerBgAlpha),
-                shadowElevation = (4 * headerBgAlpha).dp,
-                border = if (headerBgAlpha > 0.2f) androidx.compose.foundation.BorderStroke(
-                    0.5.dp,
-                    Color(0xFFE5E5EA).copy(alpha = headerBgAlpha)
-                ) else null
+            // =========================================================================================
+            // CABEÇALHO SUPERIOR PROFISSIONAL: APARECE SUAVEMENTE AO RECOLHER / ROLAR
+            // =========================================================================================
+            AnimatedVisibility(
+                visible = isScrolledPastAvatar,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RectangleShape,
+                    color = Color(0xF8FFFFFF),
+                    shadowElevation = 4.dp,
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFE5E5EA))
                 ) {
                     Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f, fill = false)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFF2F2F7).copy(alpha = 0.5f + 0.5f * headerBgAlpha))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
                         ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Voltar",
-                                tint = iosTextBlack,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                            IconButton(
+                                onClick = onBack,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFF2F2F7))
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Voltar",
+                                    tint = iosTextBlack,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
 
-                        Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
 
-                        // TRANSIÇÃO FLUIDA ENTRE TÍTULO E AVATAR COMPACTO AO ROLAR
-                        AnimatedContent(
-                            targetState = isScrolledPastAvatar,
-                            label = "profile_header_content"
-                        ) { isPast ->
-                            if (isPast) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                            // Foto e nome permanecem no cabeçalho ao rolar
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .border(1.5.dp, iosBlue, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!currentAvatar.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = currentAvatar,
+                                        contentDescription = "Foto de Perfil",
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
                                     Box(
                                         modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .border(1.5.dp, iosBlue, CircleShape),
+                                            .fillMaxSize()
+                                            .background(iosBlue),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (!currentAvatar.isNullOrBlank()) {
-                                            AsyncImage(
-                                                model = currentAvatar,
-                                                contentDescription = "Foto de Perfil",
-                                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(iosBlue),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = currentName.take(1).ifBlank { "G" }.uppercase(),
-                                                    color = Color.White,
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(10.dp))
-
-                                    Column {
                                         Text(
-                                            text = currentName,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            color = iosTextBlack,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = userEmail,
-                                            fontSize = 11.sp,
-                                            color = iosTextGray,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            text = currentName.take(1).ifBlank { "G" }.uppercase(),
+                                            color = Color.White,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
-                            } else {
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column {
                                 Text(
-                                    text = "Perfil & Configurações",
+                                    text = currentName,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = iosTextBlack
+                                    fontSize = 15.sp,
+                                    color = iosTextBlack,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = userEmail,
+                                    fontSize = 11.sp,
+                                    color = iosTextGray,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
-                    }
 
-                    // Ação rápida à direita: Trocar foto de perfil (apenas quando o card principal rolou)
-                    AnimatedVisibility(visible = isScrolledPastAvatar) {
+                        // Ação rápida à direita: Trocar foto de perfil
                         IconButton(
                             onClick = { photoPickerLauncher.launch("image/*") },
                             modifier = Modifier
