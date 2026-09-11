@@ -47,26 +47,74 @@ class GeminiProvider(
         }
 
         // Redimensiona o bitmap para no máximo 1280px para envio leve e ultra-rápido à IA
-        val scaledBitmap = bitmap.scalePreservingAspect(1280)
+        val scaledBitmap = bitmap.scalePreservingAspect(2560)
         val base64Image = scaledBitmap.toBase64()
 
+                // Requisitos do Guia Oficial de Leitura de NF brasileira (NF-e 55 / NFC-e 65)
         val promptText = """
-            Você é um especialista em auditoria e leitura de cupons fiscais brasileiros (NFC-e / SAT / Danfe / Recibos).
-            Examine detalhadamente a imagem do cupom e o texto pré-lido via OCR:
-            ${localOcrResult.rawText.take(4000)}
+            Você é um extrator de dados fiscais brasileiros (NF-e modelo 55 / NFC-e modelo 65).
+            Analise a imagem da nota fiscal e preencha o schema JSON abaixo.
 
-            Extraia rigorosamente as informações no formato JSON estrito:
-            {\n              "storeName": "Nome Fantasia ou Razão Social do Estabelecimento",
-              "totalAmount": 123.45,
-              "transactionDate": "YYYY-MM-DD",
-              "category": "Alimentação, Transporte, Lazer, Saúde, Moradia, Mercado, ou Outros",
-              "paymentMethod": "PIX, Cartão de Crédito, Cartão de Débito, Dinheiro, ou NFC-e",
-              "items": ["1x Item Descrição - R$ 10.00", "2x Item Descrição - R$ 15.00"],
-              "confidence": "ALTA"
-            }
-            Atenção crítica:
-            1. O campo "totalAmount" DEVE conter o valor total final pago em reais como número decimal (ex: 45.90 ou 152.00). Não retorne 0.0 se houver valor na nota.
-            2. Retorne estritamente o JSON sem blocos de texto ou markdown extras.
+            Regras:
+            1. Não invente valores. Se um campo não estiver legível, use null.
+            2. Se houver dúvida razoável sobre um valor, marque-o em "camposIncertos".
+            3. Preserve a formatação original de CNPJ, CPF e chave de acesso (apenas números).
+            4. Valores monetários em formato numérico (ponto como separador decimal).
+
+            Texto auxiliar detectado via OCR On-Device (para suporte):
+            ${'$'}{localOcrResult.rawText.take(2000)}
+        """.trimIndent()
+
+        val fiscalSchema = """
+          {
+            "type": "OBJECT",
+            "properties": {
+              "chaveAcesso": { "type": "STRING" },
+              "numero": { "type": "STRING" },
+              "serie": { "type": "STRING" },
+              "modelo": { "type": "STRING", "enum": ["55", "65"] },
+              "dataEmissao": { "type": "STRING" },
+              "naturezaOperacao": { "type": "STRING" },
+              "emitente": {
+                "type": "OBJECT",
+                "properties": {
+                  "razaoSocial": { "type": "STRING" },
+                  "cnpj": { "type": "STRING" },
+                  "inscricaoEstadual": { "type": "STRING" }
+                }
+              },
+              "destinatario": {
+                "type": "OBJECT",
+                "properties": {
+                  "nome": { "type": "STRING" },
+                  "cnpjCpf": { "type": "STRING" }
+                }
+              },
+              "itens": {
+                "type": "ARRAY",
+                "items": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "codigo": { "type": "STRING" },
+                    "descricao": { "type": "STRING" },
+                    "ncm": { "type": "STRING" },
+                    "cfop": { "type": "STRING" },
+                    "quantidade": { "type": "NUMBER" },
+                    "valorUnitario": { "type": "NUMBER" },
+                    "valorTotal": { "type": "NUMBER" }
+                  }
+                }
+              },
+              "valorTotalProdutos": { "type": "NUMBER" },
+              "valorIcms": { "type": "NUMBER" },
+              "valorTotalNota": { "type": "NUMBER" },
+              "camposIncertos": {
+                "type": "ARRAY",
+                "items": { "type": "STRING" }
+              }
+            },
+            "required": ["chaveAcesso", "numero", "modelo", "emitente", "itens", "valorTotalNota"]
+          }
         """.trimIndent()
 
         val jsonPayload = """
@@ -74,7 +122,7 @@ class GeminiProvider(
               "contents": [
                 {
                   "parts": [
-                    { "text": ${JSONObject.quote(promptText)} },
+                    { "text": ${'$'}{JSONObject.quote(promptText)} },
                     {
                       "inlineData": {
                         "mimeType": "image/jpeg",
@@ -86,7 +134,8 @@ class GeminiProvider(
               ],
               "generationConfig": {
                 "temperature": 0.1,
-                "responseMimeType": "application/json"
+                "responseMimeType": "application/json",
+                "responseSchema": ${'$'}fiscalSchema
               }
             }
         """.trimIndent()
@@ -279,33 +328,86 @@ class GeminiProvider(
             val cleanJson = extractJsonSubstring(jsonText)
             val obj = JSONObject(cleanJson)
 
-            val storeName = obj.optString("storeName", "").ifBlank {
-                fallbackResult?.storeName ?: "Estabelecimento Comercial"
-            }
+            // 1. Razão Social / Nome do Estabelecimento pelo schema oficial NF-e / NFC-e
+            val emitenteObj = obj.optJSONObject("emitente")
+            val rawStoreName = emitenteObj?.optString("razaoSocial")?.takeIf { it.isNotBlank() && it != "null" }
+                ?: obj.optString("storeName", "").takeIf { it.isNotBlank() && it != "null" }
+                ?: fallbackResult?.storeName
+                ?: "Estabelecimento Comercial"
+            val storeName = rawStoreName.trim()
 
-            var totalAmount = extractTotalAmount(obj, cleanJson)
+            // 2. Valor Total da Nota Fiscal (Guia Oficial: valorTotalNota)
+            var totalAmount = obj.optDouble("valorTotalNota", -1.0)
+            if (totalAmount <= 0.0) {
+                totalAmount = obj.optDouble("valorTotalProdutos", -1.0)
+            }
+            if (totalAmount <= 0.0) {
+                totalAmount = extractTotalAmount(obj, cleanJson)
+            }
             if (totalAmount <= 0.0 && fallbackResult != null && fallbackResult.totalAmount > 0.0) {
                 totalAmount = fallbackResult.totalAmount
             }
+            if (totalAmount < 0.0) totalAmount = 0.0
 
-            val transactionDate = obj.optString("transactionDate", "").ifBlank {
-                fallbackResult?.transactionDate ?: currentDateString()
-            }
-            val category = obj.optString("category", "").ifBlank {
-                fallbackResult?.category ?: "Alimentação"
-            }
-            val paymentMethod = obj.optString("paymentMethod", "").ifBlank {
-                fallbackResult?.paymentMethod ?: "Cartão de Crédito"
-            }
+            // 3. Data de Emissão da Nota
+            val rawDate = obj.optString("dataEmissao", "").takeIf { it.isNotBlank() && it != "null" }
+                ?: obj.optString("transactionDate", "").takeIf { it.isNotBlank() && it != "null" }
+                ?: fallbackResult?.transactionDate
+                ?: currentDateString()
+            val transactionDate = normalizeDate(rawDate)
 
+            // 4. Categoria
+            val category = obj.optString("category", "").takeIf { it.isNotBlank() && it != "null" }
+                ?: inferCategoryFromStore(storeName)
+
+            // 5. Forma de Pagamento
+            val paymentMethod = obj.optString("paymentMethod", "").takeIf { it.isNotBlank() && it != "null" }
+                ?: fallbackResult?.paymentMethod
+                ?: "Cartão de Crédito"
+
+            // 6. Itens da Nota Fiscal com descrição, quantidade e valor total
             val itemsList = mutableListOf<String>()
-            val itemsArr = obj.optJSONArray("items")
-            if (itemsArr != null && itemsArr.length() > 0) {
-                for (i in 0 until itemsArr.length()) {
-                    itemsList.add(itemsArr.optString(i))
+            val itensArr = obj.optJSONArray("itens")
+            if (itensArr != null && itensArr.length() > 0) {
+                for (i in 0 until itensArr.length()) {
+                    val itemObj = itensArr.optJSONObject(i)
+                    if (itemObj != null) {
+                        val desc = itemObj.optString("descricao", "Item")
+                        val qtd = itemObj.optDouble("quantidade", 1.0)
+                        val vlTot = itemObj.optDouble("valorTotal", 0.0)
+                        val qtdStr = if (qtd == qtd.toLong().toDouble()) "${qtd.toLong()}" else String.format(Locale.US, "%.2f", qtd)
+                        itemsList.add("${qtdStr}x $desc - R$ ${String.format(Locale.US, "%.2f", vlTot)}")
+                    } else {
+                        itemsList.add(itensArr.optString(i))
+                    }
                 }
-            } else if (fallbackResult != null && fallbackResult.items.isNotEmpty()) {
-                itemsList.addAll(fallbackResult.items)
+            } else {
+                val legacyItems = obj.optJSONArray("items")
+                if (legacyItems != null && legacyItems.length() > 0) {
+                    for (i in 0 until legacyItems.length()) {
+                        itemsList.add(legacyItems.optString(i))
+                    }
+                } else if (fallbackResult != null && fallbackResult.items.isNotEmpty()) {
+                    itemsList.addAll(fallbackResult.items)
+                }
+            }
+
+            // 7. Chave de Acesso e Campos Incertos (Validação do Guia Oficial)
+            val chaveAcesso = obj.optString("chaveAcesso", "").takeIf { it.isNotBlank() && it != "null" }
+            val camposIncertosArr = obj.optJSONArray("camposIncertos") ?: obj.optJSONArray("campos_incertos")
+            val incertosList = mutableListOf<String>()
+            if (camposIncertosArr != null) {
+                for (i in 0 until camposIncertosArr.length()) {
+                    incertosList.add(camposIncertosArr.optString(i))
+                }
+            }
+
+            val confidence = if (incertosList.isNotEmpty()) {
+                "REVISÃO (Campos incertos: ${incertosList.joinToString()})"
+            } else if (!chaveAcesso.isNullOrBlank()) {
+                "ALTA (Chave NFC-e: ${chaveAcesso.take(8)}...)"
+            } else {
+                "ALTA (Oficial NF-e / NFC-e)"
             }
 
             ScannedReceiptResult(
@@ -316,7 +418,7 @@ class GeminiProvider(
                 paymentMethod = paymentMethod,
                 items = itemsList,
                 rawText = cleanJson,
-                confidence = "ALTA ($modelName)",
+                confidence = confidence,
                 familyAnalysis = obj.optString("familyAnalysis", "").takeIf { it.isNotBlank() }
             )
         } catch (e: Exception) {
@@ -367,12 +469,52 @@ class GeminiProvider(
         return 0.0
     }
 
+    
+    private fun normalizeDate(dateStr: String): String {
+        return try {
+            val trimmed = dateStr.trim()
+            if (trimmed.length >= 10 && trimmed[4] == '-' && trimmed[7] == '-') {
+                trimmed.substring(0, 10)
+            } else if (trimmed.length >= 10 && trimmed[2] == '/' && trimmed[5] == '/') {
+                val d = trimmed.substring(0, 2)
+                val m = trimmed.substring(3, 5)
+                val y = trimmed.substring(6, 10)
+                "$y-$m-$d"
+            } else {
+                currentDateString()
+            }
+        } catch (e: Exception) {
+            currentDateString()
+        }
+    }
+
+    private fun inferCategoryFromStore(storeName: String): String {
+        val lower = storeName.lowercase(Locale.getDefault())
+        return when {
+            lower.contains("supermercado") || lower.contains("hipermercado") || lower.contains("mercado") ||
+            lower.contains("atacadao") || lower.contains("assai") || lower.contains("carrefour") ||
+            lower.contains("pao de acucar") || lower.contains("hortifruti") -> "Mercado"
+            lower.contains("restaurante") || lower.contains("lanchonete") || lower.contains("padaria") ||
+            lower.contains("bar") || lower.contains("pizzaria") || lower.contains("churrascaria") ||
+            lower.contains("burger") || lower.contains("cafe") || lower.contains("doceria") -> "Alimentação"
+            lower.contains("farmacia") || lower.contains("drogaria") || lower.contains("droga") ||
+            lower.contains("saude") || lower.contains("hospital") || lower.contains("clinica") -> "Saúde"
+            lower.contains("posto") || lower.contains("combustivel") || lower.contains("gasolina") ||
+            lower.contains("auto") || lower.contains("ipiranga") || lower.contains("shell") -> "Transporte"
+            lower.contains("cinema") || lower.contains("teatro") || lower.contains("show") ||
+            lower.contains("livraria") || lower.contains("parque") -> "Lazer"
+            lower.contains("eletro") || lower.contains("moveis") || lower.contains("casa") ||
+            lower.contains("construcao") || lower.contains("leroy") -> "Moradia"
+            else -> "Outros"
+        }
+    }
+
     private fun currentDateString(): String {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         return sdf.format(Date())
     }
 
-    private fun Bitmap.scalePreservingAspect(maxDim: Int = 1280): Bitmap {
+    private fun Bitmap.scalePreservingAspect(maxDim: Int = 2560): Bitmap {
         val maxSide = max(width, height)
         if (maxSide <= maxDim) return this
         val scale = maxDim.toFloat() / maxSide.toFloat()
@@ -383,7 +525,7 @@ class GeminiProvider(
 
     private fun Bitmap.toBase64(): String {
         val outputStream = ByteArrayOutputStream()
-        this.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+        this.compress(Bitmap.CompressFormat.JPEG, 92, outputStream)
         return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 }

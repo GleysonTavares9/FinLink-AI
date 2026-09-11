@@ -80,5 +80,10 @@ data class BudgetAnalysis(
     val overallPercentage: Double,
     val categoryStatuses: List<CategoryBudgetStatus>,
     val summaryMessage: String,
-    val actionableTips: List<String>
+    val actionableTips: List<String>,
+    val openFinanceTransactionsCount: Int = 0,
+    val nfcReceiptsCount: Int = 0,
+    val connectedBanks: List<String> = emptyList(),
+    val openFinanceSpent: Double = 0.0,
+    val nfcSpent: Double = 0.0
 )

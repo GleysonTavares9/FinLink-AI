@@ -1,10 +1,17 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -277,36 +284,31 @@ fun ProfileAndOfferingsScreen(
         )
     }
 
+    val scrollState = rememberScrollState()
+    val isScrolledPastAvatar by remember {
+        derivedStateOf { scrollState.value > 140 }
+    }
+    val headerBgAlpha by remember {
+        derivedStateOf { (scrollState.value / 100f).coerceIn(0f, 1f) }
+    }
+
     Scaffold(
         containerColor = iosBg
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // CABEÇALHO COM BOTÃO VOLTAR
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // CONTEÚDO ROLÁVEL COM CARD DE PERFIL E CONFIGURAÇÕES
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 68.dp, bottom = 100.dp)
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = iosTextBlack)
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Perfil & Configurações",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = iosTextBlack
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // CARD PRINCIPAL DO USUÁRIO (ESTILO APPLE COM FOTO GOOGLE)
+                // CARD PRINCIPAL DO USUÁRIO (ESTILO APPLE COM FOTO GOOGLE)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -880,6 +882,143 @@ fun ProfileAndOfferingsScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            // CABEÇALHO FIXO FLUIDO (ESTILO APPLE IOS NATIVO)
+            // A foto e o nome aparecem no topo ESTRITAMENTE quando o usuário recolher/rolar a tela past o avatar grande
+                        // =========================================================================================
+            // CABEÇALHO SUPERIOR PROFISSIONAL FLUIDO (ESTILO APPLE SETTINGS NATIVO)
+            // =========================================================================================
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter),
+                color = Color(0xF8FFFFFF).copy(alpha = headerBgAlpha),
+                shadowElevation = (4 * headerBgAlpha).dp,
+                border = if (headerBgAlpha > 0.2f) androidx.compose.foundation.BorderStroke(
+                    0.5.dp,
+                    Color(0xFFE5E5EA).copy(alpha = headerBgAlpha)
+                ) else null
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFF2F2F7).copy(alpha = 0.5f + 0.5f * headerBgAlpha))
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Voltar",
+                                tint = iosTextBlack,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // TRANSIÇÃO FLUIDA ENTRE TÍTULO E AVATAR COMPACTO AO ROLAR
+                        AnimatedContent(
+                            targetState = isScrolledPastAvatar,
+                            label = "profile_header_content"
+                        ) { isPast ->
+                            if (isPast) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, iosBlue, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (!currentAvatar.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = currentAvatar,
+                                                contentDescription = "Foto de Perfil",
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(iosBlue),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = currentName.take(1).ifBlank { "G" }.uppercase(),
+                                                    color = Color.White,
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column {
+                                        Text(
+                                            text = currentName,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = iosTextBlack,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = userEmail,
+                                            fontSize = 11.sp,
+                                            color = iosTextGray,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = "Perfil & Configurações",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = iosTextBlack
+                                )
+                            }
+                        }
+                    }
+
+                    // Ação rápida à direita: Trocar foto de perfil (apenas quando o card principal rolou)
+                    AnimatedVisibility(visible = isScrolledPastAvatar) {
+                        IconButton(
+                            onClick = { photoPickerLauncher.launch("image/*") },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEBF5FF))
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = "Trocar Foto",
+                                tint = iosBlue,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 

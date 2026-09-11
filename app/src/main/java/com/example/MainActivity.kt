@@ -242,10 +242,8 @@ class MainActivity : ComponentActivity() {
 
                             composable("ai_assistant") {
                                 GeminiAssistantScreen(
-                                    aiResponse = aiResponse,
-                                    isLoading = isAiLoading,
-                                    onBack = { navController.popBackStack() },
-                                    onAskGemini = { prompt -> viewModel.askGeminiAdvisor(prompt) }
+                                    viewModel = viewModel,
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
 
@@ -335,8 +333,9 @@ class MainActivity : ComponentActivity() {
                         ExpenseModalBottomSheet(
                             onDismissRequest = { showExpenseModal = false },
                             connectedAccounts = connectedAccounts,
-                            onSaveExpense = { storeName, amount, category, date, paymentMethod, notes ->
-                                viewModel.addManualExpense(storeName, amount, category, date, paymentMethod, notes)
+                            onSaveExpense = { storeName, amount, category, date, paymentMethod, notes, installments ->
+                                val finalNotes = if (installments > 1) "${notes ?: ""}\n(Parcelado em ${installments}x)".trim() else notes
+                                viewModel.addManualExpense(storeName, amount, category, date, paymentMethod, finalNotes)
                             }
                         )
                     }
@@ -353,14 +352,15 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // MENU SUSPENSO MODERNO TRANSLÚCIDO EM VIDRO BRANCO
+                    // MENU SUSPENSO MODERNO TRANSLÚCIDO EM VIDRO BRANCO (Posicionado acima do Dock)
                     AnimatedVisibility(
                         visible = isSuspendedMenuOpen,
                         enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
                         exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 98.dp)
+                            .navigationBarsPadding()
+                            .padding(bottom = 92.dp)
                             .padding(horizontal = 16.dp)
                     ) {
                         IosSuspendedActionMenu(
@@ -741,35 +741,42 @@ fun IosFloatingDock(
         colors = CardDefaults.cardColors(containerColor = Color(0xEEFFFFFF)),
         border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xD9E5E5EA))
     ) {
-        Row(
+                Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Item 1: Início
-            IosDockTab(
-                icon = Icons.Default.Home,
-                label = "Início",
-                isSelected = currentRoute == "dashboard",
-                activeColor = iosBlue,
-                onClick = { onNavigate("dashboard") }
-            )
+            // Lado Esquerdo com exatamente 50% de espaço proporcional
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Item 1: Início
+                IosDockTab(
+                    icon = Icons.Default.Home,
+                    label = "Início",
+                    isSelected = currentRoute == "dashboard",
+                    activeColor = iosBlue,
+                    onClick = { onNavigate("dashboard") }
+                )
 
-            // Item 2: Atividades
-            IosDockTab(
-                icon = Icons.Default.SwapVert,
-                label = "Atividades",
-                isSelected = currentRoute == "activities",
-                activeColor = iosBlue,
-                onClick = { onNavigate("activities") }
-            )
+                // Item 2: Atividades
+                IosDockTab(
+                    icon = Icons.Default.SwapVert,
+                    label = "Atividades",
+                    isSelected = currentRoute == "activities",
+                    activeColor = iosBlue,
+                    onClick = { onNavigate("activities") }
+                )
+            }
 
-            // BOTíO CENTRAL DO MENU SUSPENSO (+)
+            // BOTÃO CENTRAL DO MENU SUSPENSO (+) 100% PERFEITAMENTE CENTRALIZADO
             Box(
                 modifier = Modifier
-                    .size(50.dp)
+                    .padding(horizontal = 4.dp)
+                    .size(52.dp)
                     .clip(CircleShape)
                     .shadow(8.dp, CircleShape, spotColor = iosBlue.copy(alpha = 0.35f))
                     .background(
@@ -789,23 +796,30 @@ fun IosFloatingDock(
                 )
             }
 
-            // Item 3: Cupom AI
-            IosDockTab(
-                icon = Icons.Default.CameraAlt,
-                label = "Cupom",
-                isSelected = currentRoute == "scan_receipt",
-                activeColor = iosBlue,
-                onClick = { onNavigate("scan_receipt") }
-            )
+            // Lado Direito com exatamente 50% de espaço proporcional
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Item 3: Cupom AI
+                IosDockTab(
+                    icon = Icons.Default.CameraAlt,
+                    label = "Cupom",
+                    isSelected = currentRoute == "scan_receipt",
+                    activeColor = iosBlue,
+                    onClick = { onNavigate("scan_receipt") }
+                )
 
-            // Item 4: Perfil & Recursos
-            IosDockTab(
-                icon = Icons.Default.Person,
-                label = "Perfil",
-                isSelected = currentRoute == "profile",
-                activeColor = iosBlue,
-                onClick = { onNavigate("profile") }
-            )
+                // Item 4: Perfil & Recursos
+                IosDockTab(
+                    icon = Icons.Default.Person,
+                    label = "Perfil",
+                    isSelected = currentRoute == "profile",
+                    activeColor = iosBlue,
+                    onClick = { onNavigate("profile") }
+                )
+            }
         }
     }
 }

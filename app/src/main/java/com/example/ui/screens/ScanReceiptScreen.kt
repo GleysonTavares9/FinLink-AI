@@ -104,6 +104,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.data.gemini.ScannedReceiptResult
+import com.example.data.db.OpenFinanceAccountEntity
+import com.example.data.util.SmartCategoryClassifier
+import androidx.compose.foundation.horizontalScroll
 import com.example.ui.theme.IosBlue
 import com.example.ui.theme.IosGreen
 import com.example.ui.theme.IosIndigo
@@ -122,6 +125,7 @@ import java.util.Locale
 @Composable
 fun ScanReceiptScreen(
     scanState: ScanUiState,
+    connectedAccounts: List<OpenFinanceAccountEntity> = emptyList(),
     onScanImage: (Bitmap) -> Unit,
     onScanNfceUrlOrKey: (String) -> Unit = {},
     onScanNfceHtml: (String, String) -> Unit = { _, _ -> },
@@ -148,7 +152,7 @@ fun ScanReceiptScreen(
     var newItemText by remember { mutableStateOf("") }
     var formValidationErr by remember { mutableStateOf<String?>(null) }
 
-    val categories = listOf("Alimentação", "Transporte", "Lazer", "Saúde", "Moradia", "Mercado", "Outros")
+    val categories = listOf("Moradia", "Mercado", "Alimentação", "Transporte", "Saúde", "Lazer", "Compras", "Outros")
     val paymentMethods = listOf("PIX", "Cartão de Crédito", "Cartão de Débito", "Dinheiro", "Boleto", "NFC-e")
 
     val gmsBarcodeScanner = remember {
@@ -719,8 +723,15 @@ fun ScanReceiptScreen(
 
                                     OutlinedTextField(
                                         value = editableStoreName,
-                                        onValueChange = { editableStoreName = it },
-                                        label = { Text("Estabelecimento") },
+                                        onValueChange = {
+                                            editableStoreName = it
+                                            val autoCat = SmartCategoryClassifier.classifyCategory(it, editableItems)
+                                            if (autoCat != "Outros") {
+                                                editableCategory = autoCat
+                                            }
+                                        },
+                                        label = { Text("Estabelecimento / Conta") },
+                                        placeholder = { Text("Ex: Água, Luz, Copasa, Supermercado...") },
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(14.dp)
                                     )
@@ -735,7 +746,43 @@ fun ScanReceiptScreen(
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                                     )
 
-                                    Text("Categoria", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
+                                    Text("Definir Conta / Meio de Pagamento", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
+                                    val accountOptions = remember(connectedAccounts) {
+                                        val list = mutableListOf<String>()
+                                        if (connectedAccounts.isNotEmpty()) {
+                                            list.addAll(connectedAccounts.map { it.bankName }.distinct())
+                                        }
+                                        listOf("Nubank", "Banco Inter", "Itaú", "Santander", "Cartão de Crédito", "PIX", "Carteira / Dinheiro").forEach {
+                                            if (!list.contains(it)) list.add(it)
+                                        }
+                                        list
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        accountOptions.forEach { acc ->
+                                            val isSel = editablePaymentMethod == acc
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = if (isSel) IosBlue.copy(alpha = 0.15f) else Color(0xFFF1F5F9),
+                                                border = if (isSel) androidx.compose.foundation.BorderStroke(1.2.dp, IosBlue) else null,
+                                                modifier = Modifier.clickable { editablePaymentMethod = acc }
+                                            ) {
+                                                Text(
+                                                    text = acc,
+                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isSel) IosBlue else Color(0xFF334155)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Text("Categoria / Grupo Orçamentário", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
                                     FlowRow(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalArrangement = Arrangement.spacedBy(6.dp)

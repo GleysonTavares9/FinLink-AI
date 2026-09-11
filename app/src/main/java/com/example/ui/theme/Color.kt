@@ -53,3 +53,20 @@ val LightBackground = IosLightBackground
 val LightSurface = IosLightCard
 val LightSurfaceVariant = IosLightCardSecondary
 
+
+// FinLink Premium Glassmorphism Colors (for MainActivity Menus)
+val FinIndigo = Color(0xFF007AFF)
+val FinIndigoDeep = Color(0xFF0A84FF)
+val FinIndigoLight = Color(0xFF66A3FF)
+val FinSlate900 = Color(0xFF0F172A)
+val FinSlate500 = Color(0xFF64748B)
+val FinSlate200 = Color(0xFFE2E8F0)
+val FinSlate100 = Color(0xFFF1F5F9)
+val FinRose = Color(0xFFF43F5E)
+val FinRoseLight = Color(0xFFFDA4AF)
+val FinAmber = Color(0xFFF59E0B)
+val FinAmberLight = Color(0xFFFCD34D)
+val FinIceWhite = Color(0xFFFFFFFF)
+val FinFrostBorder = Color(0x33FFFFFF)
+val FinGlassCard = Color(0xB3FFFFFF)
+val FinShadowIndigo = Color(0x26007AFF)

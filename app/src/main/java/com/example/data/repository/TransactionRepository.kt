@@ -125,9 +125,9 @@ class TransactionRepository(
                 } else null
 
                 val formattedSubtitle = if (instTag != null) {
-                    "${formatDateSimple(dateStr)} • $instTag • ${friendlyCategory(tx.category)}"
+                    "${formatDateSimple(dateStr)} • $instTag • ${friendlyCategory(tx.category, cleanDesc)}"
                 } else {
-                    "${formatDateSimple(dateStr)} • ${friendlyCategory(tx.category)}"
+                    "${formatDateSimple(dateStr)} • ${friendlyCategory(tx.category, cleanDesc)}"
                 }
 
                 val sig = buildSignature(dateStr, absAmount, cleanDesc)
@@ -143,7 +143,7 @@ class TransactionRepository(
                         date = dateStr,
                         formattedDate = formatDateSimple(dateStr),
                         dateGroup = inferDateGroup(dateStr),
-                        category = friendlyCategory(tx.category),
+                        category = friendlyCategory(tx.category, cleanDesc),
                         bankName = bank,
                         paymentMethod = if (cleanDesc.contains("Pix", ignoreCase = true)) "PIX" else "Open Finance",
                         isSubscription = isSub,
@@ -243,13 +243,21 @@ class TransactionRepository(
         val d = desc.lowercase(Locale.ROOT)
         val c = category.lowercase(Locale.ROOT)
         
-        // Faturas e cartões são SAÍDAS contábeis, NUNCA transferências neutras
-        if (c.contains("credit card") || d.contains("fatura") || d.contains("cartão de crédito") || d.contains("pagamento cartão")) {
+        // Faturas e cartões são SAÍDAS contábeis se representam a liquidação da fatura
+        if (c.contains("credit card") || d.contains("fatura") || d.contains("cartão de crédito") || d.contains("cartao de credito") || d.contains("pagamento cartão")) {
             return false
         }
         
         return d.contains("dinheiro reservado") ||
-               d.contains("dinheiro retirado poupança")
+               d.contains("dinheiro retirado") ||
+               d.contains("bolso") ||
+               d.contains("reserva por") ||
+               d.contains("reserva para") ||
+               d.contains("poupança") ||
+               d.contains("poupanca") ||
+               d.contains("cofrinho") ||
+               d.contains("caixinha") ||
+               c.contains("internal")
     }
 
     private fun isKnownSubscription(desc: String): Boolean {
@@ -266,7 +274,33 @@ class TransactionRepository(
                d.contains("apple")
     }
 
-    private fun friendlyCategory(rawCat: String): String {
+    private fun friendlyCategory(rawCat: String, desc: String = ""): String {
+        val d = desc.lowercase(Locale.ROOT)
+        // Inferência inteligente quando a categoria do Open Finance for genérica ou vazia
+        if (d.isNotBlank()) {
+            if (d.contains("supermercado") || d.contains("mercado") || d.contains("epa") || d.contains("mart minas") || d.contains("carrefour") || d.contains("assai") || d.contains("atacadao") || d.contains("sacolao") || d.contains("hortifruti") || d.contains("acougue")) {
+                return "Supermercado"
+            }
+            if (d.contains("drogaria") || d.contains("farmacia") || d.contains("farmácia") || d.contains("lucena") || d.contains("cosmeti") || d.contains("remedio")) {
+                return "Farmácia"
+            }
+            if (d.contains("netflix") || d.contains("spotify") || d.contains("google") || d.contains("disney") || d.contains("prime") || d.contains("cinema")) {
+                return "Assinaturas"
+            }
+            if (d.contains("mercadolivre") || d.contains("shopee") || d.contains("amazon") || d.contains("marisa") || d.contains("calcados") || d.contains("roupa")) {
+                return "Compras"
+            }
+            if (d.contains("padaria") || d.contains("pao mais") || d.contains("pao de minas") || d.contains("restaurante") || d.contains("lanche") || d.contains("ifood") || d.contains("burger") || d.contains("pizza")) {
+                return "Restaurantes & Lanches"
+            }
+            if (d.contains("uber") || d.contains("99") || d.contains("combustivel") || d.contains("posto") || d.contains("gasolina")) {
+                return "Transporte"
+            }
+            if (d.contains("cemig") || d.contains("copasa") || d.contains("aluguel") || d.contains("condominio") || d.contains("energia") || d.contains("claro") || d.contains("vivo") || d.contains("tim")) {
+                return "Moradia"
+            }
+        }
+
         return when (rawCat.trim()) {
             "Groceries" -> "Supermercado"
             "Pharmacy" -> "Farmácia"
@@ -367,10 +401,23 @@ class TransactionRepository(
     }
 
     private fun inferDateGroup(dateStr: String): String {
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        if (dateStr == today) return "Hoje"
-        if (dateStr == "2026-09-08" || dateStr.endsWith("08")) return "Ontem"
-        return "Setembro 2026"
+        try {
+            val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale("pt", "BR"))
+            val date = format.parse(dateStr) ?: return dateStr
+            
+            val todayStr = format.format(java.util.Date())
+            if (dateStr == todayStr) return "Hoje"
+            
+            val cal = java.util.Calendar.getInstance()
+            cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+            val yesterdayStr = format.format(cal.time)
+            if (dateStr == yesterdayStr) return "Ontem"
+            
+            val displayFormat = java.text.SimpleDateFormat("EEEE, dd 'de' MMMM", java.util.Locale("pt", "BR"))
+            return displayFormat.format(date).replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale("pt", "BR")) else it.toString() }
+        } catch (e: Exception) {
+            return dateStr
+        }
     }
 
     fun getAllOfferings(): List<AppOfferingFeature> {

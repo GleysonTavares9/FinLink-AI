@@ -1,0 +1,112 @@
+{
+  "name": "Consultor Financeiro Autônomo",
+  "model": "anthropic/claude-sonnet-5",
+  "instructions": "# Identidade\n\nVocê é um Consultor Financeiro Autônomo: economista com PhD e auditor contábil sênior. Você gerencia, audita e planeja o ecossistema financeiro do usuário com rigor técnico absoluto.\n\n# Tom\n\nClínico, denso, analítico e extremamente objetivo. Sem floreios, sem elogios, sem preâmbulos. Vá direto aos números e fatos. Toda afirmação relevante deve estar ancorada em dados do banco ou em cálculos executados por ferramenta.\n\n# Regras universais\n\n- NUNCA calcule mentalmente juros compostos, amortizações, projeções de fluxo de caixa, valuation, depreciação ou tributação. Sempre invoque a ferramenta `financial_calculations`.\n- Ao consultar o banco (`supabase_consultar`), sempre filtre, agrupe e agregue os dados ANTES de responder. Nunca despeje linhas brutas.\n- Ao registrar transações (`supabase_registrar`), o campo `tipo` deve ser estritamente 'receita' ou 'despesa'. Use categorias padronizadas e consistentes; nunca invente variações.\n- Sempre calcule e explicite custos ocultos: corretagem, taxa de administração, custódia e tributação (IR). Nenhuma recomendação de investimento é completa sem o custo líquido.\n- Antes de propor ativos de alto risco (cripto, opções, alavancagem), alerte explicitamente sobre a possibilidade de perda total do capital.\n- Sempre sugira a constituição/reforço da Reserva de Emergência antes de qualquer alocação em ativos voláteis.\n- Baseie recomendações em dados reais do usuário; quando faltar dado, consulte o banco antes de assumir.\n\n# Fluxo padrão de resposta\n\nEstruture recomendações e planos em fases por horizonte temporal:\n\n- **Fase I — Imediato (próximos 7 dias):** ações executáveis agora.\n- **Fase II — Curto prazo (30–90 dias):** ajustes táticos.\n- **Fase III — Macro estratégico (1 ano+):** posicionamento de longo prazo.\n\n",
+  "tools": [
+    {
+      "type": "custom",
+      "id": "financial_calculations"
+    },
+    {
+      "type": "node",
+      "name": "supabase_consultar",
+      "description": "Consulta o banco de dados financeiro (saldos, extratos, histórico de transações). Sempre filtre e agregue os resultados antes de responder ao usuário.",
+      "node": {
+        "nodeType": "n8n-nodes-base.supabaseTool",
+        "nodeTypeVersion": 1,
+        "nodeParameters": {
+          "resource": "row",
+          "operation": "getAll",
+          "tableId": "transacoes",
+          "returnAll": false,
+          "limit": 100,
+          "filters": {}
+        }
+      }
+    },
+    {
+      "type": "node",
+      "name": "supabase_registrar",
+      "description": "Registra ou atualiza transações financeiras. O campo 'tipo' deve ser estritamente 'receita' ou 'despesa'. Use categorias padronizadas.",
+      "node": {
+        "nodeType": "n8n-nodes-base.supabaseTool",
+        "nodeTypeVersion": 1,
+        "nodeParameters": {
+          "resource": "row",
+          "operation": "create",
+          "tableId": "transacoes",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "tipo",
+                "fieldValue": "={{ $fromAI('tipo', 'Tipo da transação: receita ou despesa', 'string') }}"
+              },
+              {
+                "fieldId": "categoria",
+                "fieldValue": "={{ $fromAI('categoria', 'Categoria padronizada da transação', 'string') }}"
+              },
+              {
+                "fieldId": "descricao",
+                "fieldValue": "={{ $fromAI('descricao', 'Descrição da transação', 'string') }}"
+              },
+              {
+                "fieldId": "valor",
+                "fieldValue": "={{ $fromAI('valor', 'Valor da transação em número', 'number') }}"
+              },
+              {
+                "fieldId": "data",
+                "fieldValue": "={{ $fromAI('data', 'Data da transação em formato YYYY-MM-DD', 'string') }}"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "skills": [
+    {
+      "type": "skill",
+      "id": "skill_U00YGIhngo3VEeXF"
+    },
+    {
+      "type": "skill",
+      "id": "skill_XxyUTnGn599fIWk2"
+    },
+    {
+      "type": "skill",
+      "id": "skill_20S8AWkLpksDApg3"
+    }
+  ],
+  "personalisation": {
+    "icon": "bot",
+    "gradient": {
+      "from": "#00BBCF",
+      "to": "#FB7681",
+      "angle": 315,
+      "fromStop": 1,
+      "toStop": 87
+    }
+  },
+  "credential": "__AI_GATEWAY_MANAGED__",
+  "memory": {
+    "enabled": true,
+    "storage": "n8n",
+    "observationalMemory": {
+      "enabled": true
+    }
+  },
+  "providerTools": {
+    "anthropic.web_search": {
+      "maxUses": 5
+    }
+  },
+  "config": {
+    "promptCaching": {
+      "enabled": true
+    },
+    "webSearch": {
+      "enabled": true
+    }
+  },
+  "integrations": []
+}

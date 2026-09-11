@@ -250,20 +250,8 @@ class NfceParser {
         }
     }
 
-    private fun inferCategory(storeName: String, items: List<String>): String {
-        val combined = (storeName + " " + items.joinToString(" ")).lowercase(Locale.getDefault())
-        return when {
-            combined.contains("supermercado") || combined.contains("mercado") || combined.contains("atacado") ||
-            combined.contains("hortifruti") || combined.contains("alimento") || combined.contains("padaria") -> "Mercado"
-            combined.contains("restaurante") || combined.contains("lanchonete") || combined.contains("bar") ||
-            combined.contains("pizza") || combined.contains("burguer") || combined.contains("cafe") -> "Alimentação"
-            combined.contains("farmacia") || combined.contains("drogaria") || combined.contains("droga") ||
-            combined.contains("medic") || combined.contains("saude") -> "Saúde"
-            combined.contains("posto") || combined.contains("combustivel") || combined.contains("gasolina") ||
-            combined.contains("etanol") || combined.contains("auto") -> "Transporte"
-            combined.contains("cinema") || combined.contains("livraria") || combined.contains("parque") -> "Lazer"
-            else -> "Outros"
-        }
+        private fun inferCategory(storeName: String, items: List<String>): String {
+        return com.example.data.util.SmartCategoryClassifier.classifyCategory(storeName, items)
     }
 
     private fun extractTagText(source: String, className: String): String {

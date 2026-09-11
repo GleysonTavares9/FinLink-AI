@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,8 +36,29 @@ import androidx.compose.ui.unit.sp
 fun BankLogoView(
     bankName: String,
     modifier: Modifier = Modifier,
-    size: Dp = 44.dp
+    size: Dp = 44.dp,
+    imageUrl: String? = null
 ) {
+    if (!imageUrl.isNullOrBlank()) {
+        Box(
+            modifier = modifier
+                .size(size)
+                .shadow(4.dp, RoundedCornerShape(size * 0.28f), spotColor = Color(0x33000000))
+                .clip(RoundedCornerShape(size * 0.28f))
+                .background(Color.White)
+                .border(1.dp, Color(0xFFE5E5EA), RoundedCornerShape(size * 0.28f)),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = bankName,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(size * 0.65f)
+            )
+        }
+        return
+    }
+
     val cleanName = bankName.lowercase()
 
     when {

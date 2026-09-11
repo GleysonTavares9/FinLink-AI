@@ -10,6 +10,9 @@ data class OpenFinanceAccountEntity(
     val accountType: String, // Conta Corrente, Cartão de Crédito, Poupança
     val accountNumber: String,
     val balance: Double,
+    val imageUrl: String? = null,
+    val creditLimit: Double? = null,
+    val availableCredit: Double? = null,
     val connectedAt: Long = System.currentTimeMillis(),
     val status: String = "CONECTADO", // CONECTADO, SINCRONIZANDO, PENDENTE
     val lastSync: Long = System.currentTimeMillis()

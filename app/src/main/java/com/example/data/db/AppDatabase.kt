@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
         OpenFinanceTransactionEntity::class,
         HouseholdEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 

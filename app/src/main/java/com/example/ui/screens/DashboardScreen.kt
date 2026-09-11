@@ -127,6 +127,7 @@ fun DashboardScreen(
     onDeleteExpense: (Long) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var isInlineSearchOpen by remember { mutableStateOf(false) }
     var isBalanceVisible by remember { mutableStateOf(true) }
     var selectedPeriod by remember { mutableStateOf("ESTE_MES") } // "ESTE_MES", "30_DIAS", "MES_ANTERIOR", "TODOS"
 
@@ -134,7 +135,7 @@ fun DashboardScreen(
 
     val isScrolledDown by remember {
         derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40
+            listState.firstVisibleItemIndex > 2 || (listState.firstVisibleItemIndex == 2 && listState.firstVisibleItemScrollOffset > 30)
         }
     }
 
@@ -161,16 +162,16 @@ fun DashboardScreen(
     }
 
     // PALETA HOMOGÊNEA APPLE LIGHT
-    val iosBg = Color(0xFFF2F2F7)             // Fundo cinza Apple
+    val iosBg = Color(0xFFF2F2F7)             // Gelo suave (FinSlate100)
     val iosCard = Color(0xFFFFFFFF)           // Branco puro Apple
-    val iosBorder = Color(0xFFE5E5EA)         // Borda sutil Apple
-    val iosTextBlack = Color(0xFF1C1C1E)      // Texto principal
+    val iosBorder = Color(0xFFE5E5EA)         // Borda glacial (FinSlate200)
+    val iosTextBlack = Color(0xFF1C1C1E)      // Texto principal (FinSlate900)
     val iosTextGray = Color(0xFF64748B)       // Subtítulos
     val iosTextMuted = Color(0xFF8E8E93)      // Metadados
-    val iosBlue = Color(0xFF007AFF)           // Azul Apple ÚNICO
-    val iosGreen = Color(0xFF34C759)          // Verde Apple (Entradas +R$)
-    val iosRed = Color(0xFFFF3B30)            // Vermelho Apple (Saídas e Faturas -R$)
-    val iosOrange = Color(0xFFFF9500)         // Laranja Apple (Previsão / Alertas)
+    val iosBlue = Color(0xFF007AFF)           // Índigo primário (FinIndigo)
+    val iosGreen = Color(0xFF007AFF)          // Positivo → Índigo (sem verde)
+    val iosRed = Color(0xFFF43F5E)            // Rose-vermelho (FinRose)
+    val iosOrange = Color(0xFFF59E0B)         // Âmbar (FinAmber)
 
     // =========================================================================================
     // FILTRAGEM DE PERÍODO (EXATAMENTE IDÊNTICA À TELA DE KPIS)
@@ -181,6 +182,15 @@ fun DashboardScreen(
         cal.add(Calendar.MONTH, -1)
         SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(cal.time)
     }
+        val greeting = remember {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        when (hour) {
+            in 0..11 -> "Bom dia"
+            in 12..17 -> "Boa tarde"
+            else -> "Boa noite"
+        }
+    }
+
     val thirtyDaysAgo = remember {
         val cal = Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR, -30)
@@ -308,18 +318,19 @@ fun DashboardScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(top = 70.dp, bottom = 130.dp)
+            contentPadding = PaddingValues(top = 12.dp, bottom = 130.dp)
         ) {
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.statusBarsPadding())
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
                         // TÍTULO GRANDE EXPANDIDO COM DATA
             item {
                 Column(modifier = Modifier.padding(top = 4.dp)) {
                     Text(
-                        text = "FinLink AI",
-                        fontSize = 32.sp,
+                        text = "$greeting, Gleyson 👋",
+                        fontSize = 28.sp,
                         fontWeight = FontWeight.Black,
                         color = iosTextBlack,
                         letterSpacing = (-0.8).sp
@@ -332,6 +343,36 @@ fun DashboardScreen(
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
+
+            // CAMPO DE BUSCA PRINCIPAL ABERTO NA HOME (ESTILO APPLE LIGHT)
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = Color(0x06000000)),
+                    placeholder = { Text("Buscar lançamentos, lojas ou categorias...", color = iosTextMuted, fontSize = 14.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = iosTextGray, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Limpar", tint = iosTextGray, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = iosCard,
+                        unfocusedContainerColor = iosCard,
+                        focusedBorderColor = iosBlue,
+                        unfocusedBorderColor = iosBorder,
+                        focusedTextColor = iosTextBlack,
+                        unfocusedTextColor = iosTextBlack
+                    ),
+                    singleLine = true
+                )
             }
 
             // =========================================================================================
@@ -644,7 +685,7 @@ fun DashboardScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .shadow(6.dp, RoundedCornerShape(20.dp), spotColor = Color(0x0A000000))
+                        .shadow(6.dp, RoundedCornerShape(20.dp), spotColor = Color(0x08000000))
                         .clickable { onNavigateToFinancialDashboard() },
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = iosCard),
@@ -762,7 +803,7 @@ fun DashboardScreen(
                                     modifier = Modifier.width(160.dp)
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp)) {
-                                        BankLogoView(bankName = acc.bankName, size = 32.dp)
+                                        BankLogoView(bankName = acc.bankName, size = 32.dp, imageUrl = acc.imageUrl)
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(acc.bankName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = iosTextBlack, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         Text(acc.accountType, fontSize = 10.sp, color = iosTextGray)
@@ -781,31 +822,7 @@ fun DashboardScreen(
                 }
             }
 
-            // CAMPO DE BUSCA
-            item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Buscar lançamentos, lojas ou categorias...", color = iosTextMuted, fontSize = 14.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = iosTextGray) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = null, tint = iosTextGray)
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = iosCard,
-                        unfocusedContainerColor = iosCard,
-                        focusedBorderColor = iosBlue,
-                        unfocusedBorderColor = iosBorder
-                    ),
-                    singleLine = true
-                )
-            }
+
 
             // LISTA DE LANÇAMENTOS DO PERÍODO
             item {
@@ -900,89 +917,159 @@ fun DashboardScreen(
         // BOTÃO IA INTELIGENTE: RECOLHE E EXPANDE DE FORMA INTELIGENTE CONFORME A ROLAGEM
         // =========================================================================================
         
+                // =========================================================================================
+        // TOPBAR PROFISSIONAL NATIVA: RECOLHIMENTO INTELIGENTE AO ROLAR COM LUPA DE BUSCA INTEGRADA
         // =========================================================================================
-        // TOPBAR PROFISSIONAL NATIVA: TRANSIÇÃO CONTÍNUA DE VIDRO TRANSLÚCIDO AO ROLAR
-        // =========================================================================================
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter),
-            color = Color(0xF4FFFFFF).copy(alpha = topBarAlpha),
-            shadowElevation = (4 * topBarAlpha).dp,
-            border = androidx.compose.foundation.BorderStroke(
-                (0.6 * topBarAlpha).dp,
-                Color(0xFFE5E5EA).copy(alpha = topBarAlpha)
-            )
+        AnimatedVisibility(
+            visible = isScrolledDown,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xF8FFFFFF),
+                shadowElevation = 4.dp,
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFE5E5EA))
             ) {
-                // Lado Esquerdo: Identificação sutil ou Saldo compacto ao rolar
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (topBarAlpha > 0.3f) {
+                if (isInlineSearchOpen || searchQuery.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Buscar na Home...", fontSize = 13.sp, color = iosTextMuted) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, tint = iosBlue, modifier = Modifier.size(18.dp))
+                            },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Limpar busca", tint = iosTextMuted, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color(0xFFF2F2F7),
+                                unfocusedContainerColor = Color(0xFFF2F2F7),
+                                focusedBorderColor = iosBlue,
+                                unfocusedBorderColor = Color(0xFFE5E5EA),
+                                focusedTextColor = iosTextBlack,
+                                unfocusedTextColor = iosTextBlack
+                            ),
+                            singleLine = true
+                        )
+                        IconButton(
+                            onClick = {
+                                isInlineSearchOpen = false
+                                searchQuery = ""
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFF2F2F7))
+                        ) {
+                            Icon(Icons.Default.Clear, contentDescription = "Fechar Busca", tint = iosTextGray, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Lado Esquerdo: Saldo em destaque e legível
                         Column {
                             Text(
-                                text = compactDateFormatted.uppercase(),
+                                text = "SALDO DISPONÍVEL",
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = iosBlue
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = if (isBalanceVisible) "R$ ${totalCheckingBalance.formatBrNumber()}" else "R$ ••••••",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = iosTextBlack
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                IconButton(
-                                    onClick = { isBalanceVisible = !isBalanceVisible },
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = null,
-                                        tint = iosTextGray,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(iosBlue)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "FINLINK AI",
-                                fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = iosBlue,
                                 letterSpacing = 0.8.sp
                             )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isBalanceVisible) "R$ ${totalCheckingBalance.formatBrNumber()}" else "R$ ••••••",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = iosTextBlack,
+                                    letterSpacing = (-0.4).sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                IconButton(
+                                    onClick = { isBalanceVisible = !isBalanceVisible },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = "Privacidade",
+                                        tint = iosTextGray,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Lado Direito: Lupa de Busca + Escanear Cupom + Sincronização
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { isInlineSearchOpen = true },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFF2F2F7))
+                                    .border(1.dp, Color(0xFFE5E5EA), CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Buscar Lançamentos",
+                                    tint = iosBlue,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = onNavigateToScan,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFEBF5FF))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = "Escanear Cupom",
+                                    tint = iosBlue,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = onNavigateToAuth,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFF2F2F7))
+                            ) {
+                                Icon(
+                                    imageVector = if (authState is AuthUiState.Authenticated) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                                    contentDescription = "Sincronização",
+                                    tint = if (authState is AuthUiState.Authenticated) iosGreen else iosTextGray,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
                         }
                     }
-                }
-
-                // Lado Direito: Atalhos consistentes mantidos na mesma posição (IA + Família + Nuvem/Sync)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButtonTop(icon = Icons.Default.CameraAlt, tint = iosBlue, sizeDp = 34, onClick = onNavigateToScan)
-                    IconButtonTop(icon = Icons.Default.FamilyRestroom, tint = iosTextBlack, sizeDp = 34, onClick = onNavigateToHousehold)
-                    IconButtonTop(
-                        icon = if (authState is AuthUiState.Authenticated) Icons.Default.CloudDone else Icons.Default.CloudSync,
-                        tint = if (authState is AuthUiState.Authenticated) iosGreen else iosTextGray,
-                        sizeDp = 34,
-                        onClick = onNavigateToAuth
-                    )
                 }
             }
         }
@@ -996,38 +1083,49 @@ fun DashboardScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 85.dp, end = 16.dp)
+                .padding(bottom = 108.dp, end = 18.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(26.dp),
-                color = iosCard,
-                shadowElevation = 8.dp,
-                border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder),
+            Box(
                 modifier = Modifier
-                    .height(50.dp)
+                    .height(54.dp)
                     .width(aiPillWidth)
-                    .clip(RoundedCornerShape(26.dp))
+                    .shadow(16.dp, RoundedCornerShape(27.dp), spotColor = Color(0x33007AFF))
+                    .clip(RoundedCornerShape(27.dp))
+                    .background(
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            colors = listOf(Color(0xFF007AFF), Color(0xFF0EA5E9))
+                        )
+                    )
+                    .border(
+                        width = 1.dp,
+                        brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                            colors = listOf(Color(0x80FFFFFF), Color(0x33FFFFFF))
+                        ),
+                        shape = RoundedCornerShape(27.dp)
+                    )
                     .clickable { onNavigateToAi() }
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Row(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                    modifier = Modifier.fillMaxSize(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = if (aiPillWidth > 70.dp) Arrangement.SpaceBetween else Arrangement.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
                         contentDescription = "IA Gemini",
-                        tint = iosBlue,
-                        modifier = Modifier.size(20.dp)
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
                     )
 
                     if (aiPillWidth > 70.dp) {
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "FinLink AI...",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = iosTextBlack,
+                            text = "Assistente IA",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
                             modifier = Modifier.weight(1f)
                         )
                     }

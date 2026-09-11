@@ -65,7 +65,7 @@ fun AgentsScreen(
                             Icon(
                                 Icons.Default.AutoAwesome,
                                 contentDescription = null,
-                                tint = Color(0xFF6366F1),
+                                tint = Color(0xFF007AFF),
                                 modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -219,7 +219,7 @@ fun AgentsScreen(
                     Text(
                         text = "${customAgents.size} ativos",
                         fontSize = 12.sp,
-                        color = Color(0xFF6366F1),
+                        color = Color(0xFF007AFF),
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -246,7 +246,7 @@ fun AgentsScreen(
                             Text(
                                 text = "Exemplo: 'Me avise se eu gastar mais de R$ 300 no Uber'",
                                 fontSize = 12.sp,
-                                color = Color(0xFF6366F1)
+                                color = Color(0xFF007AFF)
                             )
                         }
                     }
@@ -490,7 +490,7 @@ fun OfficialAgentCard(agent: AgentInfo, onAction: () -> Unit) {
                             Text(
                                 text = "(${agent.codename})",
                                 fontSize = 12.sp,
-                                color = Color(0xFF6366F1),
+                                color = Color(0xFF007AFF),
                                 fontWeight = FontWeight.SemiBold
                             )
                         }

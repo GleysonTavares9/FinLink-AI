@@ -205,13 +205,19 @@ class OpenFinanceRepository(
                 val balance = acc.optDouble("current_balance", acc.optDouble("balance", 0.0))
                 val number = acc.optString("account_number", acc.optString("number", "0000"))
                 val name = acc.optString("bank_name", acc.optString("name", bankName))
+                val imageUrl = if (acc.has("connector_image_url") && !acc.isNull("connector_image_url")) acc.optString("connector_image_url") else null
+                val creditLimit = if (acc.has("credit_limit") && !acc.isNull("credit_limit")) acc.optDouble("credit_limit") else null
+                val availableCredit = if (acc.has("available_credit_limit") && !acc.isNull("available_credit_limit")) acc.optDouble("available_credit_limit") else null
 
                 val entity = OpenFinanceAccountEntity(
                     id = accId,
                     bankName = name,
                     accountType = type.replace("_", " "),
-                    accountNumber = if (number.startsWith("Nº")) number else "Nº $number",
+                    accountNumber = if (number.startsWith("Nº") || number.startsWith("NÂº")) number else "Nº $number",
                     balance = balance,
+                    imageUrl = imageUrl,
+                    creditLimit = creditLimit,
+                    availableCredit = availableCredit,
                     connectedAt = System.currentTimeMillis(),
                     status = "CONECTADO",
                     lastSync = System.currentTimeMillis()

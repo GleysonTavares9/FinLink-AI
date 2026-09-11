@@ -41,7 +41,8 @@ class GeminiRepository {
             ""
         }
 
-        val base64Image = bitmap.toBase64()
+        val scaledBitmap = bitmap.scalePreservingAspect(2560)
+        val base64Image = scaledBitmap.toBase64()
 
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
             // Intelligent on-device local parser when Gemini API key is not injected
@@ -49,19 +50,68 @@ class GeminiRepository {
             return@withContext Result.success(localResult)
         }
 
+                // Diretrizes do Guia Oficial de Leitura de NF (NF-e 55 / NFC-e 65)
         val promptText = """
-            Você é um leitor especialista de cupons fiscais brasileiros (NFC-e / SAT / Danfe / Recibos).
-            Examine detalhadamente a imagem do cupom e extraia rigorosamente as informações no seguinte formato JSON estrito:
-            {
-              "storeName": "Nome Fantasia ou Razão Social do Estabelecimento",
-              "totalAmount": 123.45,
-              "transactionDate": "YYYY-MM-DD",
-              "category": "Alimentação, Transporte, Lazer, Saúde, Moradia, ou Outros",
-              "paymentMethod": "PIX, Cartão de Crédito, Cartão de Débito, Dinheiro, ou Boleto",
-              "items": ["1x Item Descrição - R$ 10.00", "2x Item Descrição - R$ 15.00"],
-              "confidence": "ALTA"
-            }
-            Atenção: retorne estritamente o JSON sem blocos de código ou markdown adicionais.
+            Você é um extrator de dados fiscais brasileiros (NF-e modelo 55 / NFC-e modelo 65).
+            Analise a imagem da nota fiscal e preencha o schema JSON abaixo.
+
+            Regras:
+            1. Não invente valores. Se um campo não estiver legível, use null.
+            2. Se houver dúvida razoável sobre um valor, marque-o em "camposIncertos".
+            3. Preserve a formatação original de CNPJ, CPF e chave de acesso (apenas números).
+            4. Valores monetários em formato numérico (ponto como separador decimal).
+        """.trimIndent()
+
+        val fiscalSchema = """
+          {
+            "type": "OBJECT",
+            "properties": {
+              "chaveAcesso": { "type": "STRING" },
+              "numero": { "type": "STRING" },
+              "serie": { "type": "STRING" },
+              "modelo": { "type": "STRING", "enum": ["55", "65"] },
+              "dataEmissao": { "type": "STRING" },
+              "naturezaOperacao": { "type": "STRING" },
+              "emitente": {
+                "type": "OBJECT",
+                "properties": {
+                  "razaoSocial": { "type": "STRING" },
+                  "cnpj": { "type": "STRING" },
+                  "inscricaoEstadual": { "type": "STRING" }
+                }
+              },
+              "destinatario": {
+                "type": "OBJECT",
+                "properties": {
+                  "nome": { "type": "STRING" },
+                  "cnpjCpf": { "type": "STRING" }
+                }
+              },
+              "itens": {
+                "type": "ARRAY",
+                "items": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "codigo": { "type": "STRING" },
+                    "descricao": { "type": "STRING" },
+                    "ncm": { "type": "STRING" },
+                    "cfop": { "type": "STRING" },
+                    "quantidade": { "type": "NUMBER" },
+                    "valorUnitario": { "type": "NUMBER" },
+                    "valorTotal": { "type": "NUMBER" }
+                  }
+                }
+              },
+              "valorTotalProdutos": { "type": "NUMBER" },
+              "valorIcms": { "type": "NUMBER" },
+              "valorTotalNota": { "type": "NUMBER" },
+              "camposIncertos": {
+                "type": "ARRAY",
+                "items": { "type": "STRING" }
+              }
+            },
+            "required": ["chaveAcesso", "numero", "modelo", "emitente", "itens", "valorTotalNota"]
+          }
         """.trimIndent()
 
         val jsonPayload = """
@@ -69,7 +119,7 @@ class GeminiRepository {
               "contents": [
                 {
                   "parts": [
-                    { "text": ${JSONObject.quote(promptText)} },
+                    { "text": ${'$'}{JSONObject.quote(promptText)} },
                     {
                       "inlineData": {
                         "mimeType": "image/jpeg",
@@ -81,7 +131,8 @@ class GeminiRepository {
               ],
               "generationConfig": {
                 "temperature": 0.1,
-                "responseMimeType": "application/json"
+                "responseMimeType": "application/json",
+                "responseSchema": ${'$'}fiscalSchema
               }
             }
         """.trimIndent()
@@ -184,21 +235,72 @@ class GeminiRepository {
 
     private fun parseReceiptJson(jsonText: String): ScannedReceiptResult {
         return try {
-            val cleanJson = jsonText.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            val s = jsonText.indexOf('{')
+            val e = jsonText.lastIndexOf('}')
+            val cleanJson = if (s != -1 && e != -1 && e > s) jsonText.substring(s, e + 1) else jsonText.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             val obj = JSONObject(cleanJson)
 
-            val storeName = obj.optString("storeName", "Estabelecimento Comercial")
-            val totalAmount = obj.optDouble("totalAmount", 0.0)
-            val transactionDate = obj.optString("transactionDate", currentDateString())
+            val emitenteObj = obj.optJSONObject("emitente")
+            val rawStoreName = emitenteObj?.optString("razaoSocial")?.takeIf { it.isNotBlank() && it != "null" }
+                ?: obj.optString("storeName", "").takeIf { it.isNotBlank() && it != "null" }
+                ?: "Estabelecimento Comercial"
+            val storeName = rawStoreName.trim()
+
+            var totalAmount = obj.optDouble("valorTotalNota", -1.0)
+            if (totalAmount <= 0.0) {
+                totalAmount = obj.optDouble("valorTotalProdutos", -1.0)
+            }
+            if (totalAmount <= 0.0) {
+                totalAmount = obj.optDouble("totalAmount", 0.0)
+            }
+            if (totalAmount < 0.0) totalAmount = 0.0
+
+            val rawDate = obj.optString("dataEmissao", "").takeIf { it.isNotBlank() && it != "null" }
+                ?: obj.optString("transactionDate", currentDateString())
+            val transactionDate = if (rawDate.length >= 10 && rawDate[4] == '-' && rawDate[7] == '-') rawDate.substring(0, 10) else currentDateString()
+
             val category = obj.optString("category", "Alimentação")
             val paymentMethod = obj.optString("paymentMethod", "Cartão de Crédito")
 
             val itemsList = mutableListOf<String>()
-            val itemsArr = obj.optJSONArray("items")
-            if (itemsArr != null) {
-                for (i in 0 until itemsArr.length()) {
-                    itemsList.add(itemsArr.optString(i))
+            val itensArr = obj.optJSONArray("itens")
+            if (itensArr != null && itensArr.length() > 0) {
+                for (i in 0 until itensArr.length()) {
+                    val itemObj = itensArr.optJSONObject(i)
+                    if (itemObj != null) {
+                        val desc = itemObj.optString("descricao", "Item")
+                        val qtd = itemObj.optDouble("quantidade", 1.0)
+                        val vlTot = itemObj.optDouble("valorTotal", 0.0)
+                        val qtdStr = if (qtd == qtd.toLong().toDouble()) "${qtd.toLong()}" else String.format(Locale.US, "%.2f", qtd)
+                        itemsList.add("${qtdStr}x $desc - R$ ${String.format(Locale.US, "%.2f", vlTot)}")
+                    } else {
+                        itemsList.add(itensArr.optString(i))
+                    }
                 }
+            } else {
+                val legacyItems = obj.optJSONArray("items")
+                if (legacyItems != null) {
+                    for (i in 0 until legacyItems.length()) {
+                        itemsList.add(legacyItems.optString(i))
+                    }
+                }
+            }
+
+            val chaveAcesso = obj.optString("chaveAcesso", "").takeIf { it.isNotBlank() && it != "null" }
+            val camposIncertosArr = obj.optJSONArray("camposIncertos") ?: obj.optJSONArray("campos_incertos")
+            val incertosList = mutableListOf<String>()
+            if (camposIncertosArr != null) {
+                for (i in 0 until camposIncertosArr.length()) {
+                    incertosList.add(camposIncertosArr.optString(i))
+                }
+            }
+
+            val confidence = if (incertosList.isNotEmpty()) {
+                "REVISÃO (Campos incertos: ${incertosList.joinToString()})"
+            } else if (!chaveAcesso.isNullOrBlank()) {
+                "ALTA (Chave NFC-e: ${chaveAcesso.take(8)}...)"
+            } else {
+                "ALTA (Oficial NF-e / NFC-e)"
             }
 
             ScannedReceiptResult(
@@ -209,7 +311,7 @@ class GeminiRepository {
                 paymentMethod = paymentMethod,
                 items = itemsList,
                 rawText = cleanJson,
-                confidence = "ALTA (Gemini 3.5 Flash)",
+                confidence = confidence,
                 familyAnalysis = obj.optString("familyAnalysis", "").takeIf { it.isNotBlank() }
             )
         } catch (e: Exception) {
@@ -221,7 +323,7 @@ class GeminiRepository {
                 paymentMethod = "Cartão de Crédito",
                 items = emptyList(),
                 rawText = jsonText,
-                confidence = "REVISíO NECESSÁRIA"
+                confidence = "REVISÃO NECESSÁRIA"
             )
         }
     }
@@ -245,9 +347,19 @@ class GeminiRepository {
         return sdf.format(Date())
     }
 
+    
+    private fun Bitmap.scalePreservingAspect(maxDim: Int = 2560): Bitmap {
+        val maxSide = Math.max(width, height)
+        if (maxSide <= maxDim) return this
+        val scale = maxDim.toFloat() / maxSide.toFloat()
+        val newWidth = (width * scale).toInt().coerceAtLeast(1)
+        val newHeight = (height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(this, newWidth, newHeight, true)
+    }
+
     private fun Bitmap.toBase64(): String {
         val outputStream = ByteArrayOutputStream()
-        this.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+        this.compress(Bitmap.CompressFormat.JPEG, 92, outputStream)
         return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 }

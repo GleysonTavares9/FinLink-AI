@@ -1,5 +1,10 @@
 package com.example.ui.viewmodel
 
+import com.example.data.agent.FinancialAgentEngine
+import com.example.data.agent.ChatHistoryRepository
+import com.example.data.model.AgentChatMessage
+import com.example.data.model.DefaultFinancialAgents
+import com.example.data.model.FinancialAgentPersona
 import android.app.Application
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
@@ -30,6 +35,9 @@ import com.example.domain.model.BudgetAnalysis
 import com.example.domain.model.HouseholdProfile
 import com.example.domain.usecase.CalculateBudgetUseCase
 import java.util.Locale
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -64,6 +72,20 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val supabaseSyncRepo = SupabaseSyncRepository(supabaseClient, supabaseSessionManager, expenseDao, householdDao)
 
     val openFinanceRepo = OpenFinanceRepository(openFinanceDao, expenseDao, supabaseClient)
+    private val chatHistoryRepo = ChatHistoryRepository(application, supabaseClient)
+
+    init {
+        viewModelScope.launch {
+            try {
+                val savedSessions = chatHistoryRepo.loadSessions()
+                if (savedSessions.isNotEmpty()) {
+                    _agentChatSessions.value = savedSessions
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ExpenseViewModel", "Erro ao carregar historico de chat", e)
+            }
+        }
+    }
 
     val transactionRepo = com.example.data.repository.TransactionRepository(expenseDao, openFinanceDao)
 
@@ -165,9 +187,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             initialValue = null
         )
 
-    val budgetAnalysis: StateFlow<BudgetAnalysis?> = combine(expenses, householdProfile) { exps, profile ->
+    val budgetAnalysis: StateFlow<BudgetAnalysis?> = combine(unifiedTransactions, householdProfile) { unifiedList, profile ->
         if (profile != null && profile.isConfigured && profile.monthlyIncome > 0) {
-            calculateBudgetUseCase.execute(exps, profile)
+            calculateBudgetUseCase.executeWithUnified(unifiedList, profile)
         } else {
             null
         }
@@ -234,9 +256,88 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Separa despesas parceladas mês a mês, distribuindo cada parcela para o seu mês recorrente.
+     * Ex: 3 parcelas de R$ 100 iniciadas em 2026-09:
+     * - Parcela 1/3: 2026-09
+     * - Parcela 2/3: 2026-10
+     * - Parcela 3/3: 2026-11
+     */
+    fun addInstallmentExpense(
+        storeName: String,
+        totalAmount: Double,
+        category: String,
+        startDate: String,
+        totalInstallments: Int,
+        paymentMethod: String = "Cartão de Crédito",
+        notes: String? = null
+    ) {
+        viewModelScope.launch {
+            val count = totalInstallments.coerceAtLeast(1)
+            val instAmount = totalAmount / count
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val baseDate = try { sdf.parse(startDate) ?: Date() } catch (e: Exception) { Date() }
+
+            for (i in 0 until count) {
+                val cal = Calendar.getInstance()
+                cal.time = baseDate
+                cal.add(Calendar.MONTH, i)
+                val instDate = sdf.format(cal.time)
+                val title = if (count > 1) "$storeName (Parcela ${i + 1} de $count)" else storeName
+                val instNote = if (count > 1) "Parcela ${i + 1}/$count${if (!notes.isNullOrBlank()) " • $notes" else ""}" else notes
+
+                val entity = ExpenseEntity(
+                    storeName = title,
+                    totalAmount = instAmount,
+                    category = category,
+                    paymentMethod = paymentMethod,
+                    transactionDate = instDate,
+                    isManual = true,
+                    source = if (count > 1) "MANUAL_PARCELADO" else "MANUAL",
+                    notes = instNote
+                )
+                expenseDao.insertExpense(entity)
+            }
+            if (supabaseAuthRepo.getCurrentSession() != null) {
+                syncWithCloud()
+            }
+        }
+    }
+
     fun updateExpense(expense: ExpenseEntity) {
         viewModelScope.launch {
             expenseDao.updateExpense(expense)
+            if (supabaseAuthRepo.getCurrentSession() != null) {
+                syncWithCloud()
+            }
+        }
+    }
+
+    fun updateManualExpense(
+        id: Long,
+        storeName: String,
+        amount: Double,
+        category: String,
+        date: String,
+        paymentMethod: String,
+        notes: String?
+    ) {
+        viewModelScope.launch {
+            val existing = expenseDao.getExpenseById(id)
+            if (existing != null) {
+                val updated = existing.copy(
+                    storeName = storeName,
+                    totalAmount = amount,
+                    category = category,
+                    transactionDate = date,
+                    paymentMethod = paymentMethod,
+                    notes = notes
+                )
+                expenseDao.updateExpense(updated)
+                if (supabaseAuthRepo.getCurrentSession() != null) {
+                    syncWithCloud()
+                }
+            }
         }
     }
 
@@ -565,6 +666,138 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun toggleCustomAgent(agentId: String) {
         _customAgents.value = _customAgents.value.map { custom ->
             if (custom.id == agentId) custom.copy(isActive = !custom.isActive) else custom
+        }
+    }
+
+    // --- INTEGRACAO DE AGENTES FINANCEIROS COM RACIOCINIO E WIDGETS ---
+    private val financialAgentEngine = FinancialAgentEngine()
+
+    private val _activeAgentPersona = MutableStateFlow<FinancialAgentPersona>(DefaultFinancialAgents.list.first())
+    val activeAgentPersona: StateFlow<FinancialAgentPersona> = _activeAgentPersona.asStateFlow()
+
+    private val _agentChatMessages = MutableStateFlow<List<AgentChatMessage>>(financialAgentEngine.getInitialMessages())
+    val agentChatMessages: StateFlow<List<AgentChatMessage>> = _agentChatMessages.asStateFlow()
+
+    private val _agentChatSessions = MutableStateFlow<List<com.example.data.model.AgentChatSession>>(emptyList())
+    val agentChatSessions: StateFlow<List<com.example.data.model.AgentChatSession>> = _agentChatSessions.asStateFlow()
+
+    private var currentChatSessionId: String? = null
+
+    private val _isAgentThinking = MutableStateFlow<Boolean>(false)
+    val isAgentThinking: StateFlow<Boolean> = _isAgentThinking.asStateFlow()
+
+    private val _agentSearchStatus = MutableStateFlow<String>("")
+    val agentSearchStatus: StateFlow<String> = _agentSearchStatus.asStateFlow()
+
+    fun selectAgentPersona(persona: FinancialAgentPersona) {
+        _activeAgentPersona.value = persona
+    }
+
+    fun toggleReasoningExpanded(messageId: String) {
+        _agentChatMessages.value = _agentChatMessages.value.map { msg ->
+            if (msg.id == messageId) msg.copy(isReasoningExpanded = !msg.isReasoningExpanded) else msg
+        }
+    }
+
+    fun clearAgentChat() {
+        val curId = currentChatSessionId
+        val curMsgs = _agentChatMessages.value
+        if (curId != null && curMsgs.isNotEmpty()) {
+            val sessionToSave = _agentChatSessions.value.find { it.id == curId }
+            if (sessionToSave != null) {
+                viewModelScope.launch {
+                    chatHistoryRepo.saveSession(sessionToSave)
+                }
+            }
+        }
+        currentChatSessionId = null
+        _agentChatMessages.value = emptyList()
+    }
+
+    fun loadChatSession(session: com.example.data.model.AgentChatSession) {
+        currentChatSessionId = session.id
+        _agentChatMessages.value = session.messages
+    }
+
+    fun deleteChatSession(sessionId: String) {
+        _agentChatSessions.value = _agentChatSessions.value.filter { it.id != sessionId }
+        viewModelScope.launch {
+            chatHistoryRepo.deleteSession(sessionId)
+        }
+        if (currentChatSessionId == sessionId) {
+            currentChatSessionId = null
+            _agentChatMessages.value = emptyList()
+        }
+    }
+
+    fun sendAgentUserMessage(userPrompt: String) {
+        if (userPrompt.isBlank()) return
+        val userMsg = AgentChatMessage(
+            id = java.util.UUID.randomUUID().toString(),
+            isUser = true,
+            text = userPrompt.trim(),
+            timestamp = "Agora"
+        )
+        val updatedMsgs = _agentChatMessages.value + userMsg
+        _agentChatMessages.value = updatedMsgs
+
+        val sessionId = currentChatSessionId ?: java.util.UUID.randomUUID().toString().also { currentChatSessionId = it }
+        val sessionTitle = _agentChatSessions.value.find { it.id == sessionId }?.title ?: userPrompt.trim().take(38)
+        val sessionDate = java.text.SimpleDateFormat("dd/MM • HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val currentSessionObj = com.example.data.model.AgentChatSession(
+            id = sessionId,
+            title = sessionTitle,
+            dateFormatted = sessionDate,
+            messages = updatedMsgs
+        )
+        _agentChatSessions.value = listOf(currentSessionObj) + _agentChatSessions.value.filter { it.id != sessionId }
+        viewModelScope.launch {
+            chatHistoryRepo.saveSession(currentSessionObj)
+        }
+
+        viewModelScope.launch {
+            _isAgentThinking.value = true
+            try {
+                val currentTransactions = unifiedTransactions.value
+                val agentResponse = financialAgentEngine.processUserPrompt(
+                    prompt = userPrompt,
+                    activePersona = _activeAgentPersona.value,
+                    transactions = currentTransactions,
+                    householdProfile = householdProfile.value,
+                    budgetAnalysis = budgetAnalysis.value,
+                    aiProvider = aiProvider,
+                    onProgress = { status ->
+                        _agentSearchStatus.value = status
+                    }
+                )
+                val finalMsgs = _agentChatMessages.value + agentResponse
+                _agentChatMessages.value = finalMsgs
+                val curId = currentChatSessionId
+                if (curId != null) {
+                    val updatedList = _agentChatSessions.value.map { sess ->
+                        if (sess.id == curId) sess.copy(messages = finalMsgs) else sess
+                    }
+                    _agentChatSessions.value = updatedList
+                    val finishedSession = updatedList.find { it.id == curId }
+                    if (finishedSession != null) {
+                        chatHistoryRepo.saveSession(finishedSession)
+                    }
+                }
+                try {
+                    com.example.util.FinancialAgentNotificationManager.notifyAgentResponse(
+                        context = getApplication(),
+                        agentName = _activeAgentPersona.value.name,
+                        responseText = agentResponse.text
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("ExpenseViewModel", "Erro ao disparar notificacao do agente", e)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ExpenseViewModel", "Erro ao processar mensagem do agente", e)
+            } finally {
+                _isAgentThinking.value = false
+                _agentSearchStatus.value = ""
+            }
         }
     }
 }

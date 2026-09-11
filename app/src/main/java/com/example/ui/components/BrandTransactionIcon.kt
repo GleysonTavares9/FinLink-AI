@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,7 +40,7 @@ import androidx.compose.ui.unit.sp
 import java.util.Locale
 
 /**
- * Ícone estilizado ultra-realista para transações financeiras (Estilo Pierre App),
+ * Ícone estilizado ultra-realista para transações financeiras (Estilo FinLink App),
  * com logos icônicos de marcas (Netflix, Spotify, Google, etc.) e mini badge do banco emissor.
  */
 @Composable
@@ -47,6 +49,7 @@ fun BrandTransactionIcon(
     category: String,
     bankName: String,
     isIncome: Boolean,
+    imageUrl: String? = null,
     modifier: Modifier = Modifier,
     size: Dp = 46.dp
 ) {
@@ -179,7 +182,7 @@ fun BrandTransactionIcon(
             }
         }
 
-        // Mini Badge da Instituição Financeira no Canto Inferior Direito (estilo Pierre)
+        // Mini Badge da Instituição Financeira no Canto Inferior Direito (estilo FinLink)
         BankMiniBadge(
             bankName = bankName,
             modifier = Modifier
@@ -296,7 +299,7 @@ fun GoogleIcon(modifier: Modifier = Modifier) {
 }
 
 /**
- * Ícone de Cédula de Dinheiro estilo Pierre `[ ⌾ ]`
+ * Ícone de Cédula de Dinheiro estilo FinLink `[ ⌾ ]`
  */
 @Composable
 fun CashBillIcon(tint: Color, modifier: Modifier = Modifier) {

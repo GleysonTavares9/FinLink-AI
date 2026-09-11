@@ -28,6 +28,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -102,13 +107,17 @@ fun ActivitiesScreen(
     onNavigateToScan: () -> Unit,
     onNavigateToAi: () -> Unit,
     onNavigateToManual: () -> Unit,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onDeleteExpense: (Long) -> Unit = {},
+    onEditExpense: (Long, String, Double, String, String, String, String?) -> Unit = { _, _, _, _, _, _, _ -> }
 ) {
     var isBalanceVisible by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedPeriod by remember { mutableStateOf("ESTE_MES") } // ESTE_MES, 30_DIAS, MES_ANTERIOR, TODOS
     var selectedFilter by remember { mutableStateOf("TODOS") }   // TODOS, ENTRADAS, SAIDAS, ASSINATURAS, PAGAMENTOS, INTERNAS
     var selectedTransaction by remember { mutableStateOf<UnifiedTransaction?>(null) }
+    var editingTransaction by remember { mutableStateOf<UnifiedTransaction?>(null) }
+    var transactionToDelete by remember { mutableStateOf<UnifiedTransaction?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
     // Paleta Homogênea Apple Light
@@ -135,6 +144,16 @@ fun ActivitiesScreen(
         cal.add(Calendar.MONTH, -1)
         SimpleDateFormat("MMMM", Locale("pt", "BR")).format(cal.time).replaceFirstChar { it.uppercase() }
     }
+    val nextMonthPrefix = remember {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.MONTH, 1)
+        SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(cal.time)
+    }
+    val nextMonthName = remember {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.MONTH, 1)
+        SimpleDateFormat("MMMM", Locale("pt", "BR")).format(cal.time).replaceFirstChar { it.uppercase() }
+    }
     val thirtyDaysAgo = remember {
         val cal = Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR, -30)
@@ -146,6 +165,7 @@ fun ActivitiesScreen(
         transactions.filter { tx ->
             when (selectedPeriod) {
                 "ESTE_MES" -> tx.date.startsWith(currentMonthPrefix) || tx.date.contains("2026-09")
+                "PROXIMO_MES" -> tx.date.startsWith(nextMonthPrefix) || tx.date.contains("2026-10")
                 "30_DIAS" -> tx.date >= thirtyDaysAgo || tx.date.contains("2026-09") || tx.date.contains("2026-08")
                 "MES_ANTERIOR" -> tx.date.startsWith(previousMonthPrefix) || tx.date.contains("2026-08")
                 else -> true
@@ -193,8 +213,9 @@ fun ActivitiesScreen(
     }
 
     val listState = rememberLazyListState()
+    var isInlineSearchOpen by remember { mutableStateOf(false) }
     val isScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
-    val isScrolledDown by remember { derivedStateOf { listState.firstVisibleItemIndex > 1 || listState.firstVisibleItemScrollOffset > 30 } }
+    val isScrolledDown by remember { derivedStateOf { listState.firstVisibleItemIndex > 2 || (listState.firstVisibleItemIndex == 2 && listState.firstVisibleItemScrollOffset > 40) } }
     val aiPillWidth by animateDpAsState(
         targetValue = if (isScrolling || isScrolledDown) 50.dp else 220.dp,
         animationSpec = tween(300),
@@ -202,7 +223,8 @@ fun ActivitiesScreen(
     )
 
     val currentPeriodLabel = when (selectedPeriod) {
-        "ESTE_MES" -> "$currentMonthName"
+        "ESTE_MES" -> currentMonthName
+        "PROXIMO_MES" -> "$nextMonthName (Parcelas)"
         "30_DIAS" -> "30 Dias"
         "MES_ANTERIOR" -> previousMonthName
         else -> "Todos"
@@ -258,34 +280,28 @@ fun ActivitiesScreen(
                             )
                         }
 
+
+                                                    Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+
+
                             IconButton(
-                                onClick = onNavigateToAi,
+                                onClick = { showAddDialog = true },
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(44.dp)
+                                    .shadow(6.dp, CircleShape, spotColor = Color(0x18000000))
                                     .clip(CircleShape)
-                                    .background(Color(0xFF64748B))
+                                    .background(iosBlue)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = "IA",
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Novo Lançamento",
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
-                                                    IconButton(
-                            onClick = { showAddDialog = true },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .shadow(6.dp, CircleShape, spotColor = Color(0x18000000))
-                                .clip(CircleShape)
-                                .background(iosBlue)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Novo Lançamento",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
                         }
                     }
                 }
@@ -363,6 +379,12 @@ fun ActivitiesScreen(
                                 isSelected = selectedPeriod == "ESTE_MES",
                                 onClick = { selectedPeriod = "ESTE_MES" },
                                 activeColor = iosBlue
+                            )
+                            AppleFilterChip(
+                                label = "$nextMonthName (Parcelas)",
+                                isSelected = selectedPeriod == "PROXIMO_MES",
+                                onClick = { selectedPeriod = "PROXIMO_MES" },
+                                activeColor = Color(0xFF8B5CF6)
                             )
                             AppleFilterChip(
                                 label = "30 Dias",
@@ -551,92 +573,175 @@ fun ActivitiesScreen(
                 modifier = Modifier.align(Alignment.TopCenter)
             ) {
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(12.dp, RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp), spotColor = Color(0x14000000)),
-                    shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-                    color = Color(0xF2FFFFFF),
-                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFFE5E5EA))
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = androidx.compose.ui.graphics.RectangleShape,
+                    color = Color(0xF8FFFFFF),
+                    shadowElevation = 4.dp,
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFE5E5EA))
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "ATIVIDADES • $currentPeriodLabel • $currentFilterLabel".uppercase(),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = iosBlue,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                        if (isInlineSearchOpen || searchQuery.isNotBlank()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Buscar lançamentos...", fontSize = 13.sp, color = iosTextMuted) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Search, contentDescription = null, tint = iosBlue, modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(Icons.Default.Close, contentDescription = "Limpar busca", tint = iosTextMuted, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = Color(0xFFF2F2F7),
+                                    unfocusedContainerColor = Color(0xFFF2F2F7),
+                                    focusedBorderColor = iosBlue,
+                                    unfocusedBorderColor = Color(0xFFE5E5EA),
+                                    focusedTextColor = iosTextBlack,
+                                    unfocusedTextColor = iosTextBlack
+                                ),
+                                singleLine = true
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val displayValue = when (selectedFilter) {
-                                    "ENTRADAS" -> "+${totalEntradas.formatBr()}"
-                                    "SAIDAS" -> "-${totalSaidas.formatBr()}"
-                                    else -> if (saldoLiquido >= 0) "+${saldoLiquido.formatBr()}" else "-${abs(saldoLiquido).formatBr()}"
-                                }
-                                val valueColor = when (selectedFilter) {
-                                    "ENTRADAS" -> iosGreen
-                                    "SAIDAS" -> iosRed
-                                    else -> if (saldoLiquido >= 0) iosGreen else iosRed
-                                }
+                            IconButton(
+                                onClick = {
+                                    isInlineSearchOpen = false
+                                    searchQuery = ""
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFF2F2F7))
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Fechar Busca", tint = iosTextGray, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Título limpo e elegante com período e contagem
+                            Column {
                                 Text(
-                                    text = if (isBalanceVisible) displayValue else "R$ ••••••",
-                                    fontSize = 16.sp,
+                                    text = "Atividades",
+                                    fontSize = 18.sp,
                                     fontWeight = FontWeight.Black,
-                                    color = valueColor
+                                    color = iosTextBlack,
+                                    letterSpacing = (-0.4).sp
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "$currentPeriodLabel • ${filteredTransactions.size} registros",
+                                    fontSize = 11.sp,
+                                    color = iosTextGray,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            // Ações rápidas à direita (Busca instantânea + Novo lançamento)
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(
-                                    onClick = { isBalanceVisible = !isBalanceVisible },
-                                    modifier = Modifier.size(22.dp)
+                                    onClick = { isInlineSearchOpen = true },
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFF2F2F7))
+                                        .border(1.dp, Color(0xFFE5E5EA), CircleShape)
                                 ) {
                                     Icon(
-                                        imageVector = if (isBalanceVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = null,
-                                        tint = iosTextGray,
-                                        modifier = Modifier.size(15.dp)
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Buscar",
+                                        tint = iosBlue,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { showAddDialog = true },
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(iosBlue)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Novo Lançamento",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }
                         }
+                    }                }
+            }
 
-                        // Ações rápidas no cabeçalho compacto
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = onNavigateToAi,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF64748B))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = "IA",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                                                        IconButton(
-                                onClick = { showAddDialog = true },
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(iosBlue)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Novo",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+            // BOTÃO FLUTUANTE DE IA (FAB APPLE STYLE)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 108.dp, end = 18.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .height(54.dp)
+                        .width(aiPillWidth)
+                        .shadow(16.dp, RoundedCornerShape(27.dp), spotColor = Color(0x33007AFF))
+                        .clip(RoundedCornerShape(27.dp))
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                colors = listOf(Color(0xFF007AFF), Color(0xFF0EA5E9))
+                            )
+                        )
+                        .border(
+                            width = 1.dp,
+                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                colors = listOf(Color(0x80FFFFFF), Color(0x33FFFFFF))
+                            ),
+                            shape = RoundedCornerShape(27.dp)
+                        )
+                        .clickable { onNavigateToAi() }
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = if (aiPillWidth > 70.dp) Arrangement.SpaceBetween else Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "IA Gemini",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+
+                        if (aiPillWidth > 70.dp) {
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Assistente IA",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
@@ -657,8 +762,243 @@ fun ActivitiesScreen(
             TransactionDetailBottomSheetContent(
                 transaction = tx,
                 isBalanceVisible = isBalanceVisible,
-                onClose = { selectedTransaction = null }
+                onClose = { selectedTransaction = null },
+                onEditClick = {
+                    val target = tx
+                    selectedTransaction = null
+                    editingTransaction = target
+                },
+                onDeleteClick = {
+                    val target = tx
+                    selectedTransaction = null
+                    transactionToDelete = target
+                }
             )
+        }
+    }
+
+    
+    // DIÁLOGO DE CONFIRMAÇÃO DE EXCLUSÃO DE DESPESA MANUAL
+    if (transactionToDelete != null) {
+        val tx = transactionToDelete!!
+        val localId = tx.id.removePrefix("exp_").toLongOrNull()
+        AlertDialog(
+            onDismissRequest = { transactionToDelete = null },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = Color.White,
+            title = {
+                Text(
+                    text = "Excluir Despesa Manual",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color(0xFF1C1C1E)
+                )
+            },
+            text = {
+                Text(
+                    text = "Deseja realmente excluir '${tx.title}' no valor de ${abs(tx.amount).formatBr()}?\n\nEsta despesa será removida do seu controle financeiro e sincronização.",
+                    fontSize = 14.sp,
+                    color = Color(0xFF64748B)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (localId != null) {
+                            onDeleteExpense(localId)
+                        }
+                        transactionToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Excluir", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { transactionToDelete = null }
+                ) {
+                    Text("Cancelar", color = Color(0xFF64748B), fontWeight = FontWeight.Medium)
+                }
+            }
+        )
+    }
+
+    // MODAL DE EDIÇÃO DE DESPESA MANUAL
+    if (editingTransaction != null) {
+        val tx = editingTransaction!!
+        val localId = tx.id.removePrefix("exp_").toLongOrNull()
+
+        var editStoreName by remember(tx) { mutableStateOf(tx.title) }
+        var editAmount by remember(tx) { mutableStateOf(String.format(Locale.US, "%.2f", abs(tx.amount))) }
+        var editCategory by remember(tx) { mutableStateOf(tx.category) }
+        var editDate by remember(tx) { mutableStateOf(tx.date) }
+        var editPaymentMethod by remember(tx) { mutableStateOf(tx.paymentMethod.ifEmpty { "Pix" }) }
+        var editNotes by remember(tx) { mutableStateOf(tx.notes ?: "") }
+
+        val categories = listOf("Alimentação", "Moradia", "Transporte", "Saúde", "Lazer", "Educação", "Serviços", "Compras", "Outros")
+        val paymentMethods = listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Dinheiro", "Boleto", "Conta Bancária")
+
+        ModalBottomSheet(
+            onDismissRequest = { editingTransaction = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Color.White,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Editar Despesa Manual",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1C1C1E)
+                    )
+                    IconButton(onClick = { editingTransaction = null }) {
+                        Icon(Icons.Default.Close, contentDescription = "Fechar", tint = Color(0xFF8E8E93))
+                    }
+                }
+
+                // Nome / Estabelecimento
+                OutlinedTextField(
+                    value = editStoreName,
+                    onValueChange = { editStoreName = it },
+                    label = { Text("Nome do Estabelecimento / Descrição") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = iosBlue,
+                        unfocusedBorderColor = iosBorder
+                    ),
+                    singleLine = true
+                )
+
+                // Valor
+                OutlinedTextField(
+                    value = editAmount,
+                    onValueChange = { editAmount = it.replace(',', '.') },
+                    label = { Text("Valor (R$)") },
+                    leadingIcon = {
+                        Text("R$", fontWeight = FontWeight.Bold, color = iosBlue, modifier = Modifier.padding(start = 12.dp))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = iosBlue,
+                        unfocusedBorderColor = iosBorder
+                    ),
+                    singleLine = true
+                )
+
+                // Categoria
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Categoria", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = iosTextGray)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        categories.forEach { cat ->
+                            AppleFilterChip(
+                                label = cat,
+                                isSelected = editCategory.equals(cat, ignoreCase = true),
+                                onClick = { editCategory = cat },
+                                activeColor = iosBlue
+                            )
+                        }
+                    }
+                }
+
+                // Data
+                OutlinedTextField(
+                    value = editDate,
+                    onValueChange = { editDate = it },
+                    label = { Text("Data (AAAA-MM-DD)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = iosBlue,
+                        unfocusedBorderColor = iosBorder
+                    ),
+                    singleLine = true
+                )
+
+                // Método de Pagamento
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Método de Pagamento", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = iosTextGray)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        paymentMethods.forEach { method ->
+                            AppleFilterChip(
+                                label = method,
+                                isSelected = editPaymentMethod.equals(method, ignoreCase = true),
+                                onClick = { editPaymentMethod = method },
+                                activeColor = Color(0xFF0284C7)
+                            )
+                        }
+                    }
+                }
+
+                // Observações
+                OutlinedTextField(
+                    value = editNotes,
+                    onValueChange = { editNotes = it },
+                    label = { Text("Observações (opcional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = iosBlue,
+                        unfocusedBorderColor = iosBorder
+                    ),
+                    maxLines = 3
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        val parsedAmount = editAmount.toDoubleOrNull() ?: abs(tx.amount)
+                        if (localId != null && editStoreName.isNotBlank()) {
+                            onEditExpense(
+                                localId,
+                                editStoreName.trim(),
+                                parsedAmount,
+                                editCategory,
+                                editDate.trim(),
+                                editPaymentMethod,
+                                editNotes.ifBlank { null }
+                            )
+                        }
+                        editingTransaction = null
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = iosBlue)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Salvar Alterações", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
         }
     }
 
@@ -788,16 +1128,37 @@ fun ActivityTransactionRow(
             Spacer(modifier = Modifier.width(12.dp))
 
             // Título e Subtítulos
+                        // Título e Subtítulos
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transaction.title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = iosTextBlack,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = transaction.title,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = iosTextBlack,
+                        letterSpacing = (-0.2).sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    val isInst = transaction.title.contains("Parcela", ignoreCase = true) || transaction.notes?.contains("Parcela", ignoreCase = true) == true
+                    if (isInst) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFEDE9FE)
+                        ) {
+                            Text(
+                                text = "💳 Parcela",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF7C3AED),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "${transaction.formattedDate} • ${transaction.category}",
                     fontSize = 11.sp,
@@ -845,7 +1206,9 @@ fun ActivityTransactionRow(
 fun TransactionDetailBottomSheetContent(
     transaction: UnifiedTransaction,
     isBalanceVisible: Boolean,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onEditClick: () -> Unit = {},
+    onDeleteClick: () -> Unit = {}
 ) {
     val isIncome = transaction.type == TransactionType.ENTRADA
     val isTransfer = transaction.isInternalTransfer || transaction.type == TransactionType.TRANSFERENCIA
@@ -918,7 +1281,50 @@ fun TransactionDetailBottomSheetContent(
                 DetailRow("Data", transaction.formattedDate)
                 DetailRow("Categoria", transaction.category)
                 DetailRow("Instituição / Origem", transaction.bankName.ifEmpty { "FinLink AI" })
+                DetailRow("Método / Conta", transaction.paymentMethod.ifEmpty { "Manual" })
                 DetailRow("Tipo", if (isIncome) "Entrada / Receita" else if (isTransfer) "Transferência Interna" else "Saída / Despesa")
+                if (!transaction.notes.isNullOrBlank()) {
+                    DetailRow("Observações", transaction.notes!!)
+                }
+            }
+        }
+
+        val isManualExpense = transaction.id.startsWith("exp_")
+        if (isManualExpense) {
+            Spacer(modifier = Modifier.height(18.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Botão Editar
+                Button(
+                    onClick = onEditClick,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEBF5FF),
+                        contentColor = Color(0xFF007AFF)
+                    )
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Editar", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Editar", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+
+                // Botão Excluir
+                Button(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFEE2E2),
+                        contentColor = Color(0xFFDC2626)
+                    )
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Excluir", modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Excluir", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
         }
 

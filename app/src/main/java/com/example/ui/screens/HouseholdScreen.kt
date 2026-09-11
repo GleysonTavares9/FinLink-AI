@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -105,7 +106,7 @@ fun HouseholdScreen(
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF6366F1).copy(alpha = 0.12f), Color.Transparent),
+                    colors = listOf(Color(0xFF007AFF).copy(alpha = 0.12f), Color.Transparent),
                     center = Offset(size.width * 0.90f, size.height * 0.10f),
                     radius = size.width * 0.65f
                 )
@@ -169,7 +170,7 @@ fun HouseholdScreen(
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(
                                         Brush.linearGradient(
-                                            listOf(IosIndigo, Color(0xFF4F46E5))
+                                            listOf(IosBlue, Color(0xFF0056B3))
                                         )
                                     ),
                                 contentAlignment = Alignment.Center
@@ -370,6 +371,154 @@ fun HouseholdScreen(
 
                 // Se houver análise orçamentária ativa
                 if (budgetAnalysis != null) {
+                    // Card de Integração Ativa Open Finance & Cupons Fiscais
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(12.dp, RoundedCornerShape(24.dp), spotColor = Color(0x10000000)),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xF4FFFFFF))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, Brush.verticalGradient(listOf(Color.White, Color(0x1E000000))), RoundedCornerShape(24.dp))
+                                .padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(IosGreen.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.AccountBalance,
+                                            contentDescription = null,
+                                            tint = IosGreen,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            "Open Finance & Orçamento",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = Color(0xFF1D1D1F)
+                                        )
+                                        Text(
+                                            "Conectado ao extrato bancário em tempo real",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF6B7280)
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = IosGreen.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        "● Ativo",
+                                        color = Color(0xFF15803D),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            // Bancos Conectados Chips
+                            if (budgetAnalysis.connectedBanks.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Bancos:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF86868B)
+                                    )
+                                    budgetAnalysis.connectedBanks.forEach { bank ->
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = IosBlue.copy(alpha = 0.08f)
+                                        ) {
+                                            Text(
+                                                "🏦 $bank",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = IosBlue,
+                                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Detalhamento Open Finance vs Cupons
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Open Finance (Contas e Faturas)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(Color(0xFFF9FAFB), RoundedCornerShape(14.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Column {
+                                        Text("Open Finance", fontSize = 11.sp, color = Color(0xFF86868B))
+                                        Text(
+                                            formatBr(budgetAnalysis.openFinanceSpent),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = Color(0xFF1D1D1F)
+                                        )
+                                        Text(
+                                            "${budgetAnalysis.openFinanceTransactionsCount} lançamentos",
+                                            fontSize = 10.sp,
+                                            color = IosBlue
+                                        )
+                                    }
+                                }
+
+                                // Cupons Fiscais (NFC-e)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(Color(0xFFF9FAFB), RoundedCornerShape(14.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Column {
+                                        Text("Cupons Fiscais", fontSize = 11.sp, color = Color(0xFF86868B))
+                                        Text(
+                                            formatBr(budgetAnalysis.nfcSpent),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = Color(0xFF1D1D1F)
+                                        )
+                                        Text(
+                                            "${budgetAnalysis.nfcReceiptsCount} notas",
+                                            fontSize = 10.sp,
+                                            color = IosGreen
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // Resumo Métricas
                     Card(
                         modifier = Modifier
@@ -512,7 +661,7 @@ fun HouseholdScreen(
                                     .fillMaxWidth()
                                     .height(48.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = IosPurple)
+                                colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
                             ) {
                                 Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
