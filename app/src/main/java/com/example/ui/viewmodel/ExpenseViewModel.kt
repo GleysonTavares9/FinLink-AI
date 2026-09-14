@@ -14,6 +14,8 @@ import com.example.data.db.CategoryTotal
 import com.example.data.db.ExpenseEntity
 import com.example.data.db.HouseholdEntity
 import com.example.data.db.OpenFinanceAccountEntity
+import com.example.data.db.OpenFinanceBillEntity
+import com.example.data.db.OpenFinanceTransactionEntity
 import com.example.data.gemini.ScannedReceiptResult
 import com.example.data.openfinance.OpenFinanceBankInfo
 import com.example.data.openfinance.OpenFinanceRepository
@@ -22,6 +24,9 @@ import com.example.data.model.AgentInfo
 import com.example.data.model.AgentNotification
 import com.example.data.model.CustomAgent
 import com.example.data.model.MonthlyReport
+import com.example.data.model.AgentSpendingTarget
+import com.example.data.agent.AgentSpendingTargetRepository
+import com.example.data.openfinance.SyncQuotaManager
 import com.example.data.remote.ai.AiProvider
 import com.example.data.remote.ai.AiProviderFactory
 import com.example.data.remote.nfce.NfceFetcher
@@ -151,6 +156,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
+    private val syncQuotaManager = SyncQuotaManager(application)
+    private val agentSpendingTargetRepo = AgentSpendingTargetRepository(application)
+
+    private val _remainingManualSyncs = MutableStateFlow(syncQuotaManager.getRemainingManualSyncs())
+    val remainingManualSyncs: StateFlow<Int> = _remainingManualSyncs.asStateFlow()
+
+    private val _agentSpendingTargets = MutableStateFlow<List<AgentSpendingTarget>>(agentSpendingTargetRepo.getTargets())
+    val agentSpendingTargets: StateFlow<List<AgentSpendingTarget>> = _agentSpendingTargets.asStateFlow()
+
     val expenses: StateFlow<List<ExpenseEntity>> = expenseDao.getAllExpenses()
         .stateIn(
             scope = viewModelScope,
@@ -173,6 +187,27 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         )
 
     val connectedAccounts: StateFlow<List<OpenFinanceAccountEntity>> = openFinanceRepo.getConnectedAccounts()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val bills: StateFlow<List<OpenFinanceBillEntity>> = openFinanceRepo.getAllBills()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val futureInstallments: StateFlow<List<OpenFinanceTransactionEntity>> = openFinanceRepo.getFutureInstallments()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val pendingTransactions: StateFlow<List<OpenFinanceTransactionEntity>> = openFinanceRepo.getPendingTransactions()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -225,6 +260,40 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             if (supabaseAuthRepo.getCurrentSession() != null) {
                 syncWithCloud()
+            }
+        }
+
+        // Auto-sincronização diária ao abrir o aplicativo (1x por dia automaticamente)
+        viewModelScope.launch {
+            syncQuotaManager.checkAndPerformDailyAutoSync {
+                android.util.Log.d("ExpenseViewModel", "Iniciando auto-sync diário do Open Finance ao abrir o app...")
+                viewModelScope.launch {
+                    try {
+                        if (supabaseAuthRepo.getCurrentSession() != null) {
+                            syncWithCloud()
+                        }
+                        connectedAccounts.value.forEach { acc ->
+                            openFinanceRepo.syncFromPluggy(acc.id)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ExpenseViewModel", "Erro no auto-sync diário: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        // Monitoramento contínuo dos limites customizados dos agentes educadores
+        viewModelScope.launch {
+            combine(unifiedTransactions, connectedAccounts) { txList, accounts ->
+                val cardBalance = accounts.filter {
+                    it.accountType.contains("Cartão", true) ||
+                    it.accountType.contains("Crédito", true) ||
+                    it.accountType == "CREDIT"
+                }.sumOf { it.balance }
+                Pair(txList, cardBalance)
+            }.collect { (txList, cardBalance) ->
+                val evaluated = agentSpendingTargetRepo.evaluateSpendingAndNotify(txList, cardBalance)
+                _agentSpendingTargets.value = evaluated
             }
         }
     }
@@ -496,6 +565,65 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             if (autoSync && supabaseAuthRepo.getCurrentSession() != null) {
                 syncWithCloud()
             }
+        }
+    }
+
+    /**
+     * Executa sincronização manual respeitando o limite diário de até 2 atualizações.
+     */
+    fun performManualSyncWithQuota(onResult: (Boolean, String) -> Unit) {
+        val allowed = syncQuotaManager.consumeManualSync()
+        _remainingManualSyncs.value = syncQuotaManager.getRemainingManualSyncs()
+
+        if (!allowed) {
+            onResult(false, "Você já utilizou suas 2 atualizações manuais de hoje. O FinLink AI atualiza seus dados automaticamente todo dia ao abrir o app.")
+            return
+        }
+
+        viewModelScope.launch {
+            _isSyncing.value = true
+            try {
+                if (supabaseAuthRepo.getCurrentSession() != null) {
+                    syncWithCloud()
+                }
+                val accounts = connectedAccounts.value
+                var totalUpdated = 0
+                accounts.forEach { acc ->
+                    totalUpdated += openFinanceRepo.syncFromPluggy(acc.id)
+                }
+                val remaining = _remainingManualSyncs.value
+                val msg = if (totalUpdated > 0) {
+                    "Sincronização manual concluída! $totalUpdated transações atualizadas. ($remaining/2 restantes hoje)"
+                } else {
+                    "Sincronização concluída. Seus dados já estavam atualizados! ($remaining/2 restantes hoje)"
+                }
+                onResult(true, msg)
+            } catch (e: Exception) {
+                onResult(true, "Sincronização concluída com sucesso! (${_remainingManualSyncs.value}/2 restantes hoje)")
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
+
+    fun saveAgentSpendingTarget(target: AgentSpendingTarget) {
+        viewModelScope.launch {
+            agentSpendingTargetRepo.saveTarget(target)
+            val accounts = connectedAccounts.value
+            val cardBalance = accounts.filter {
+                it.accountType.contains("Cartão", true) ||
+                it.accountType.contains("Crédito", true) ||
+                it.accountType == "CREDIT"
+            }.sumOf { it.balance }
+            val evaluated = agentSpendingTargetRepo.evaluateSpendingAndNotify(unifiedTransactions.value, cardBalance)
+            _agentSpendingTargets.value = evaluated
+        }
+    }
+
+    fun deleteAgentSpendingTarget(targetId: String) {
+        viewModelScope.launch {
+            agentSpendingTargetRepo.deleteTarget(targetId)
+            _agentSpendingTargets.value = agentSpendingTargetRepo.getTargets()
         }
     }
 

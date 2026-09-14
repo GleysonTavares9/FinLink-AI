@@ -1,4 +1,4 @@
-﻿package com.example.data.db
+package com.example.data.db
 
 import android.content.Context
 import androidx.room.Database
@@ -9,10 +9,11 @@ import androidx.room.RoomDatabase
     entities = [
         ExpenseEntity::class,
         OpenFinanceAccountEntity::class,
+        OpenFinanceBillEntity::class,
         OpenFinanceTransactionEntity::class,
         HouseholdEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 

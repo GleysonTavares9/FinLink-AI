@@ -122,6 +122,7 @@ fun DashboardScreen(
     onNavigateToAuth: () -> Unit = {},
     onSyncCloud: () -> Unit = {},
     onNavigateToFinancialDashboard: () -> Unit = {},
+    onNavigateToCreditCards: () -> Unit = {},
     isSyncing: Boolean = false,
     lastSyncTime: String = "",
     onDeleteExpense: (Long) -> Unit
@@ -586,11 +587,12 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Card A: Faturas em Aberto
+                    // Card A: Faturas em Aberto (Acesso à Gestão de Cartões & Faturas)
                     Card(
                         modifier = Modifier
                             .weight(1f)
-                            .shadow(4.dp, RoundedCornerShape(20.dp), spotColor = Color(0x08000000)),
+                            .shadow(4.dp, RoundedCornerShape(20.dp), spotColor = Color(0x08000000))
+                            .clickable { onNavigateToCreditCards() },
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = iosCard),
                         border = androidx.compose.foundation.BorderStroke(1.dp, iosBorder)

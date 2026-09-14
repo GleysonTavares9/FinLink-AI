@@ -118,16 +118,26 @@ class TransactionRepository(
                     else -> TransactionType.SAIDA
                 }
 
-                val isInst = cleanDesc.contains("Parcela", ignoreCase = true)
-                val instTag = if (isInst) {
-                    val r = Regex("""\((Parcela \d+ de \d+)\)""")
-                    r.find(cleanDesc)?.groupValues?.get(1) ?: "Parcelada"
-                } else null
+                val instTag = when {
+                    tx.installmentNumber != null && tx.totalInstallments != null -> "Parcela ${tx.installmentNumber} de ${tx.totalInstallments}"
+                    cleanDesc.contains("Parcela", ignoreCase = true) -> {
+                        val r = Regex("""\((Parcela \d+ de \d+)\)""")
+                        r.find(cleanDesc)?.groupValues?.get(1) ?: "Parcelada"
+                    }
+                    else -> null
+                }
 
-                val formattedSubtitle = if (instTag != null) {
-                    "${formatDateSimple(dateStr)} • $instTag • ${friendlyCategory(tx.category, cleanDesc)}"
-                } else {
-                    "${formatDateSimple(dateStr)} • ${friendlyCategory(tx.category, cleanDesc)}"
+                val statusTag = when {
+                    tx.billForecastDate != null -> "Fatura ${tx.billForecastDate}"
+                    tx.status.equals("PENDING", ignoreCase = true) -> "Fatura em Aberto"
+                    else -> null
+                }
+
+                val formattedSubtitle = buildString {
+                    append(formatDateSimple(dateStr))
+                    if (instTag != null) append(" • $instTag")
+                    if (statusTag != null) append(" • $statusTag")
+                    append(" • ${friendlyCategory(tx.category, cleanDesc)}")
                 }
 
                 val sig = buildSignature(dateStr, absAmount, cleanDesc)
@@ -145,11 +155,15 @@ class TransactionRepository(
                         dateGroup = inferDateGroup(dateStr),
                         category = friendlyCategory(tx.category, cleanDesc),
                         bankName = bank,
-                        paymentMethod = if (cleanDesc.contains("Pix", ignoreCase = true)) "PIX" else "Open Finance",
+                        paymentMethod = if (cleanDesc.contains("Pix", ignoreCase = true)) "PIX" else if (instTag != null || tx.operationType == "CARTAO") "Cartão de Crédito" else "Open Finance",
                         isSubscription = isSub,
                         isInternalTransfer = isInternal,
                         accountId = tx.accountId,
-                        notes = if (instTag != null) "$instTag • $bank" else bank
+                        notes = buildString {
+                            if (instTag != null) append("$instTag • ")
+                            if (statusTag != null) append("$statusTag • ")
+                            append(bank)
+                        }
                     )
                 )
             }

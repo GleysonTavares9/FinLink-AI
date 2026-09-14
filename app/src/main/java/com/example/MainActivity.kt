@@ -80,6 +80,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.data.remote.supabase.AuthUiState
 import com.example.ui.screens.ActivitiesScreen
 import com.example.ui.screens.AuthScreen
+import com.example.ui.screens.CreditCardManagementScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.GeminiAssistantScreen
 import com.example.ui.screens.HouseholdScreen
@@ -141,6 +142,12 @@ class MainActivity : ComponentActivity() {
                 val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
                 val unifiedTransactions by viewModel.unifiedTransactions.collectAsStateWithLifecycle()
                 val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+                val bills by viewModel.bills.collectAsStateWithLifecycle()
+                val futureInstallments by viewModel.futureInstallments.collectAsStateWithLifecycle()
+                val pendingTransactions by viewModel.pendingTransactions.collectAsStateWithLifecycle()
+                val remainingManualSyncs by viewModel.remainingManualSyncs.collectAsStateWithLifecycle()
+                val agentSpendingTargets by viewModel.agentSpendingTargets.collectAsStateWithLifecycle()
+                val defaultAgents by viewModel.defaultAgents.collectAsStateWithLifecycle()
 
                 var showExpenseModal by remember { mutableStateOf(false) }
                     var isSuspendedMenuOpen by remember { mutableStateOf(false) }
@@ -192,7 +199,8 @@ class MainActivity : ComponentActivity() {
                                     onNavigateToAuth = { navController.navigate("auth") },
                                     onSyncCloud = { viewModel.syncWithCloud() },
                                     onDeleteExpense = { id -> viewModel.deleteExpense(id) },
-                                    onNavigateToFinancialDashboard = { navController.navigate("financial_dashboard") }
+                                    onNavigateToFinancialDashboard = { navController.navigate("financial_dashboard") },
+                                    onNavigateToCreditCards = { navController.navigate("credit_cards_management") }
                                 )
                             }
 
@@ -220,6 +228,9 @@ class MainActivity : ComponentActivity() {
                             composable("open_finance") {
                                 OpenFinanceScreen(
                                     connectedAccounts = connectedAccounts,
+                                    bills = bills,
+                                    futureInstallments = futureInstallments,
+                                    pendingTransactions = pendingTransactions,
                                     availableBanks = viewModel.openFinanceRepo.availableBanks,
                                     apiSpecJson = viewModel.openFinanceRepo.getApiSpecJson(),
                                     onBack = { navController.popBackStack() },
@@ -237,6 +248,23 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onDisconnectBank = { id -> viewModel.disconnectOpenFinanceAccount(id) },
                                     onFetchToken = { callback -> viewModel.fetchPluggyConnectToken(callback) }
+                                )
+                            }
+
+                            composable("credit_cards_management") {
+                                CreditCardManagementScreen(
+                                    connectedAccounts = connectedAccounts,
+                                    bills = bills,
+                                    futureInstallments = futureInstallments,
+                                    pendingTransactions = pendingTransactions,
+                                    agentTargets = agentSpendingTargets,
+                                    availableAgents = defaultAgents,
+                                    remainingManualSyncs = remainingManualSyncs,
+                                    onBack = { navController.popBackStack() },
+                                    onManualSync = { onResult -> viewModel.performManualSyncWithQuota(onResult) },
+                                    onSaveTarget = { target -> viewModel.saveAgentSpendingTarget(target) },
+                                    onDeleteTarget = { id -> viewModel.deleteAgentSpendingTarget(id) },
+                                    onNavigateToOpenFinanceConnect = { navController.navigate("open_finance") }
                                 )
                             }
 

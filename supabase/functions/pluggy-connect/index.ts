@@ -28,7 +28,7 @@ serve(async (req) => {
       if (req.method === "POST" || req.method === "PUT") {
         body = await req.json();
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Obter userId se fornecido
     const authHeader = req.headers.get("Authorization");
@@ -41,7 +41,7 @@ serve(async (req) => {
         });
         const { data: { user } } = await userClient.auth.getUser();
         if (user?.id) userId = user.id;
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const url = new URL(req.url);
@@ -261,8 +261,8 @@ async function syncPluggyItem(itemId: string, apiKey: string, supabase: any, use
       } while (cursor);
       console.log(`[Pluggy v2] Conta ${acc.id}: ${txList.length} transacoes encontradas`);
 
-            // Preparar payloads em batch para upsert eficiente
-            const txPayloads = txList.map((tx: any) => {
+      // Preparar payloads em batch para upsert eficiente
+      const txPayloads = txList.map((tx: any) => {
         const rawAmt = tx.amount || 0;
         // Pluggy v2: se type for CREDIT ou categoria indicar receita -> CREDIT
         const isCredit = tx.type === "CREDIT" || (!tx.type && rawAmt > 0);
@@ -301,7 +301,7 @@ async function syncPluggyItem(itemId: string, apiKey: string, supabase: any, use
 
       // Não duplicar em "expenses" - o app lê diretamente de open_finance_transactions com o campo type
       console.log(`[Batch] ${txPayloads.length} transações salvas para conta ${acc.id}`);
-      } catch (txErr) {
+    } catch (txErr) {
       console.error(`Erro ao buscar transações da conta ${acc.id}:`, txErr);
     }
   }

@@ -50,13 +50,36 @@ CREATE TABLE IF NOT EXISTS public.open_finance_accounts (
     current_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     credit_limit NUMERIC(12, 2) DEFAULT 0.00,
     available_credit_limit NUMERIC(12, 2) DEFAULT 0.00,
+    balance_close_date DATE,            -- Data de fechamento da fatura em aberto
+    balance_due_date DATE,              -- Data de vencimento da fatura a vencer
+    minimum_payment NUMERIC(12, 2),     -- Pagamento mínimo da fatura atual
+    credit_card_brand TEXT,             -- MASTERCARD, VISA, ELO, AMEX
+    credit_card_level TEXT,             -- PLATINUM, BLACK, GOLD, STANDARD
+    credit_card_status TEXT,            -- ACTIVE, BLOCKED
     connector_image_url TEXT,
     is_connected BOOLEAN NOT NULL DEFAULT true,
     connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. TABELA DE TRANSAÇÕES E EXTRATOS OPEN FINANCE
+-- 4. TABELA DE FATURAS DE CARTÃO DE CRÉDITO (BILLS)
+CREATE TABLE IF NOT EXISTS public.open_finance_bills (
+    id TEXT PRIMARY KEY, -- ID da fatura na Pluggy (UUID)
+    account_id TEXT NOT NULL REFERENCES public.open_finance_accounts(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    due_date DATE NOT NULL,
+    bill_closing_date DATE,
+    total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    minimum_payment_amount NUMERIC(12, 2) DEFAULT 0.00,
+    allows_installments BOOLEAN DEFAULT true,
+    finance_charges JSONB DEFAULT '[]'::jsonb, -- IOF, juros, multas
+    payments JSONB DEFAULT '[]'::jsonb,        -- Pagamentos feitos contra a fatura
+    is_paid BOOLEAN NOT NULL DEFAULT false,    -- Calculado pela conciliação de pagamentos
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 5. TABELA DE TRANSAÇÕES E EXTRATOS OPEN FINANCE
 CREATE TABLE IF NOT EXISTS public.open_finance_transactions (
     id TEXT PRIMARY KEY, -- ID da transação na Pluggy (UUID)
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -65,17 +88,25 @@ CREATE TABLE IF NOT EXISTS public.open_finance_transactions (
     amount NUMERIC(12, 2) NOT NULL,
     transaction_date DATE NOT NULL DEFAULT CURRENT_DATE,
     category TEXT DEFAULT 'Outros',
-    payment_type TEXT,
+    payment_type TEXT,                      -- CREDIT (entrada) ou DEBIT (saída)
+    status TEXT NOT NULL DEFAULT 'POSTED',   -- PENDING (fatura aberta / a vencer) ou POSTED (fechada/paga)
+    bill_id TEXT,                           -- ID da fatura correspondente (quando fechada)
+    bill_forecast_date TEXT,                -- Previsão da fatura (YYYY-MM) para parcelas futuras
+    installment_number INT,                 -- Número da parcela (ex: 1)
+    total_installments INT,                 -- Total de parcelas (ex: 6)
+    total_installment_amount NUMERIC(12, 2),-- Valor total da compra original parcelada
+    operation_type TEXT,                    -- TED, DOC, PIX, CARTAO, BOLETO, etc.
+    payment_data JSONB,                     -- Payer, receiver, boletoMetadata
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ==============================================================================
--- 5. SEGURANÇA: ROW LEVEL SECURITY (RLS)
--- Garante que nenhum usuário veja os dados financeiros de outro usuário!
+-- 6. SEGURANÇA: ROW LEVEL SECURITY (RLS)
 -- ==============================================================================
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.household_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.open_finance_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.open_finance_bills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.open_finance_transactions ENABLE ROW LEVEL SECURITY;
 
 -- Políticas para Expenses
@@ -99,6 +130,13 @@ CREATE POLICY "open_finance_accounts_user_policy" ON public.open_finance_account
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+-- Políticas para Open Finance Bills
+DROP POLICY IF EXISTS "open_finance_bills_user_policy" ON public.open_finance_bills;
+CREATE POLICY "open_finance_bills_user_policy" ON public.open_finance_bills
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
 -- Políticas para Open Finance Transactions
 DROP POLICY IF EXISTS "open_finance_transactions_user_policy" ON public.open_finance_transactions;
 CREATE POLICY "open_finance_transactions_user_policy" ON public.open_finance_transactions
@@ -107,7 +145,12 @@ CREATE POLICY "open_finance_transactions_user_policy" ON public.open_finance_tra
     WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================
--- 6. ÍNDICES DE PERFORMANCE
+-- 7. ÍNDICES DE PERFORMANCE
+-- ==============================================================================
+CREATE INDEX IF NOT EXISTS idx_of_transactions_status ON public.open_finance_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_of_transactions_forecast ON public.open_finance_transactions(bill_forecast_date);
+CREATE INDEX IF NOT EXISTS idx_of_transactions_bill_id ON public.open_finance_transactions(bill_id);
+CREATE INDEX IF NOT EXISTS idx_of_bills_account ON public.open_finance_bills(account_id);
 -- ==============================================================================
 CREATE INDEX IF NOT EXISTS idx_expenses_user_id ON public.expenses(user_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON public.expenses(transaction_date);
