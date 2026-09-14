@@ -191,6 +191,8 @@ class MainActivity : ComponentActivity() {
                                     authState = authState,
                                     isSyncing = isSyncing,
                                     lastSyncTime = lastSyncTime,
+                                    remainingManualSyncs = remainingManualSyncs,
+                                    onManualSyncWithQuota = { onResult -> viewModel.performManualSyncWithQuota(onResult) },
                                     onNavigateToScan = { navController.navigate("scan_receipt") },
                                     onNavigateToManual = { showExpenseModal = true },
                                     onNavigateToOpenFinance = { navController.navigate("open_finance") },
@@ -247,7 +249,10 @@ class MainActivity : ComponentActivity() {
                                         viewModel.importBankStatementText(text, targetId, onDone)
                                     },
                                     onDisconnectBank = { id -> viewModel.disconnectOpenFinanceAccount(id) },
-                                    onFetchToken = { callback -> viewModel.fetchPluggyConnectToken(callback) }
+                                    onFetchToken = { callback -> viewModel.fetchPluggyConnectToken(callback) },
+                                    isSyncing = isSyncing,
+                                    remainingManualSyncs = remainingManualSyncs,
+                                    onManualSync = { onResult -> viewModel.performManualSyncWithQuota(onResult) }
                                 )
                             }
 
@@ -317,7 +322,10 @@ class MainActivity : ComponentActivity() {
                                     onNavigateToScan = { navController.navigate("scan_receipt") },
                                     onNavigateToAi = { navController.navigate("ai_assistant") },
                                     onNavigateToManual = { showExpenseModal = true },
-                                    onBack = { navController.popBackStack() }
+                                    onBack = { navController.popBackStack() },
+                                    isSyncing = isSyncing,
+                                    remainingManualSyncs = remainingManualSyncs,
+                                    onManualSync = { onResult -> viewModel.performManualSyncWithQuota(onResult) }
                                 )
                             }
 

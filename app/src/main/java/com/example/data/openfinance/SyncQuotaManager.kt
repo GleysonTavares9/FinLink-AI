@@ -1,4 +1,4 @@
-package com.example.data.openfinance
+﻿package com.example.data.openfinance
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -15,8 +15,23 @@ class SyncQuotaManager(context: Context) {
     }
 
     /**
-     * Verifica se o auto-sync diário já foi realizado hoje ao abrir o app.
-     * Se ainda não foi realizado, executa a ação e grava a data atual.
+     * Verifica se e a primeira vez que o app roda (seed inicial nao foi executado ainda).
+     * Usado para evitar que ensureInitialSeed() sobreescreva dados reais da Pluggy em toda abertura.
+     */
+    fun isFirstRun(): Boolean {
+        return !prefs.getBoolean("initial_seed_done", false)
+    }
+
+    /**
+     * Marca que o seed inicial ja foi executado. Deve ser chamado apos ensureInitialSeed().
+     */
+    fun markFirstRunDone() {
+        prefs.edit().putBoolean("initial_seed_done", true).apply()
+    }
+
+    /**
+     * Verifica se o auto-sync diario ja foi realizado hoje ao abrir o app.
+     * Se ainda nao foi realizado, executa a acao e grava a data atual.
      */
     fun checkAndPerformDailyAutoSync(onPerformSync: () -> Unit) {
         val today = getTodayDateString()
@@ -28,13 +43,12 @@ class SyncQuotaManager(context: Context) {
     }
 
     /**
-     * Retorna a quantidade de sincronizações manuais restantes hoje (máximo 2).
+     * Retorna a quantidade de sincronizacoes manuais restantes hoje (maximo 2).
      */
     fun getRemainingManualSyncs(): Int {
         val today = getTodayDateString()
         val savedDate = prefs.getString("manual_sync_date", "")
         if (savedDate != today) {
-            // Novo dia: reseta o contador
             prefs.edit().putString("manual_sync_date", today).putInt("manual_sync_count", 0).apply()
             return 2
         }
@@ -43,8 +57,8 @@ class SyncQuotaManager(context: Context) {
     }
 
     /**
-     * Tenta consumir uma das 2 atualizações manuais do dia.
-     * Retorna true se permitido, ou false se o limite de 2 atualizações já tiver sido atingido.
+     * Tenta consumir uma das 2 atualizacoes manuais do dia.
+     * Retorna true se permitido, ou false se o limite ja foi atingido.
      */
     fun consumeManualSync(): Boolean {
         val remaining = getRemainingManualSyncs()

@@ -1,4 +1,4 @@
-package com.example.ui.viewmodel
+﻿package com.example.ui.viewmodel
 
 import com.example.data.agent.FinancialAgentEngine
 import com.example.data.agent.ChatHistoryRepository
@@ -247,15 +247,19 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val lastSyncTime: StateFlow<String> = _lastSyncTime.asStateFlow()
 
     init {
-        // Inicializa dados reais do banco conectado (Mercado Pago e extratos) se ainda não existirem
-        viewModelScope.launch {
-            try {
-                openFinanceRepo.ensureInitialSeed()
-            } catch (e: Exception) {
-                android.util.Log.e("ExpenseViewModel", "Erro ao inicializar seed Open Finance: ${e.message}")
+        // Seed inicial executado APENAS na primeira abertura do app
+        // Protege dados reais da Pluggy de serem sobrescritos em toda abertura
+        if (syncQuotaManager.isFirstRun()) {
+            viewModelScope.launch {
+                try {
+                    openFinanceRepo.ensureInitialSeed()
+                    syncQuotaManager.markFirstRunDone()
+                    android.util.Log.d("ExpenseViewModel", "Seed inicial executado pela primeira vez.")
+                } catch (e: Exception) {
+                    android.util.Log.e("ExpenseViewModel", "Erro seed: ${e.message}")
+                }
             }
         }
-
         // Auto-sincronizacao em tempo real ao inicializar caso haja sessao ativa
         viewModelScope.launch {
             if (supabaseAuthRepo.getCurrentSession() != null) {
@@ -263,20 +267,24 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // Auto-sincronização diária ao abrir o aplicativo (1x por dia automaticamente)
+        // Auto-sincronização diária ao abrir o aplicativo (1x por dia automaticamente via Pluggy)
         viewModelScope.launch {
             syncQuotaManager.checkAndPerformDailyAutoSync {
                 android.util.Log.d("ExpenseViewModel", "Iniciando auto-sync diário do Open Finance ao abrir o app...")
                 viewModelScope.launch {
                     try {
+                        _isSyncing.value = true
                         if (supabaseAuthRepo.getCurrentSession() != null) {
                             syncWithCloud()
                         }
-                        connectedAccounts.value.forEach { acc ->
-                            openFinanceRepo.syncFromPluggy(acc.id)
-                        }
+                        openFinanceRepo.syncFromPluggy("sync_all")
+                        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        _lastSyncTime.value = sdf.format(Date())
+                        android.util.Log.d("ExpenseViewModel", "Auto-sync diário da Pluggy concluído.")
                     } catch (e: Exception) {
                         android.util.Log.e("ExpenseViewModel", "Erro no auto-sync diário: ${e.message}")
+                    } finally {
+                        _isSyncing.value = false
                     }
                 }
             }
@@ -586,16 +594,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 if (supabaseAuthRepo.getCurrentSession() != null) {
                     syncWithCloud()
                 }
-                val accounts = connectedAccounts.value
-                var totalUpdated = 0
-                accounts.forEach { acc ->
-                    totalUpdated += openFinanceRepo.syncFromPluggy(acc.id)
-                }
+                val totalUpdated = openFinanceRepo.syncFromPluggy("sync_all")
+                val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+                _lastSyncTime.value = sdf.format(Date())
                 val remaining = _remainingManualSyncs.value
                 val msg = if (totalUpdated > 0) {
-                    "Sincronização manual concluída! $totalUpdated transações atualizadas. ($remaining/2 restantes hoje)"
+                    "Sincronização manual concluída! $totalUpdated atualizações da Pluggy. ($remaining/2 restantes hoje)"
                 } else {
-                    "Sincronização concluída. Seus dados já estavam atualizados! ($remaining/2 restantes hoje)"
+                    "Sincronização concluída. Seus dados da Pluggy estão em dia! ($remaining/2 restantes hoje)"
                 }
                 onResult(true, msg)
             } catch (e: Exception) {

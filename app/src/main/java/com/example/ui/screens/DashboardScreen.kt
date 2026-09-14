@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
@@ -104,6 +109,7 @@ import kotlin.math.abs
  * PREVISÃO DE GASTOS & FATURAS EM ABERTO: Cálculo contábil separado de Saldo em Conta.
  * BOTÃO IA INTELIGENTE: Expande no topo e se recolhe suavemente ao rolar.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     expenses: List<ExpenseEntity>,
@@ -125,14 +131,26 @@ fun DashboardScreen(
     onNavigateToCreditCards: () -> Unit = {},
     isSyncing: Boolean = false,
     lastSyncTime: String = "",
+    remainingManualSyncs: Int = 2,
+    onManualSyncWithQuota: ((Boolean, String) -> Unit) -> Unit = {},
     onDeleteExpense: (Long) -> Unit
 ) {
+    val context = LocalContext.current
+    var isRefreshing by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var isInlineSearchOpen by remember { mutableStateOf(false) }
     var isBalanceVisible by remember { mutableStateOf(true) }
     var selectedPeriod by remember { mutableStateOf("ESTE_MES") } // "ESTE_MES", "30_DIAS", "MES_ANTERIOR", "TODOS"
 
     val listState = rememberLazyListState()
+
+    val onRefreshAction: () -> Unit = {
+        isRefreshing = true
+        onManualSyncWithQuota { allowed, msg ->
+            isRefreshing = false
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
 
     val isScrolledDown by remember {
         derivedStateOf {
@@ -217,18 +235,14 @@ fun DashboardScreen(
     // 1. Entradas e Saídas do Período Selecionado
     val totalInflow = remember(periodTransactions) {
         periodTransactions
-            .filter { it.type == TransactionType.ENTRADA }
+            .filter { it.type == TransactionType.ENTRADA && !it.isInternalTransfer }
             .sumOf { abs(it.amount) }
     }
 
-    val totalOutflow = remember(periodTransactions, totalSpent) {
-        if (periodTransactions.isNotEmpty()) {
-            periodTransactions
-                .filter { it.type in listOf(TransactionType.SAIDA, TransactionType.ASSINATURA, TransactionType.PAGAMENTO, TransactionType.CUPOM_FISCAL) }
-                .sumOf { abs(it.amount) }
-        } else {
-            totalSpent
-        }
+    val totalOutflow = remember(periodTransactions) {
+        periodTransactions
+            .filter { !it.isInternalTransfer && it.type in listOf(TransactionType.SAIDA, TransactionType.ASSINATURA, TransactionType.PAGAMENTO, TransactionType.CUPOM_FISCAL) }
+            .sumOf { abs(it.amount) }
     }
 
     val saldoLiquidoPeriodo = totalInflow - totalOutflow
@@ -237,53 +251,53 @@ fun DashboardScreen(
     val checkingAccounts = remember(connectedAccounts) {
         connectedAccounts.filter {
             !it.accountType.contains("Cartão", ignoreCase = true) &&
-            !it.accountType.contains("Credit", ignoreCase = true)
+            !it.accountType.contains("Cartao", ignoreCase = true) &&
+            !it.accountType.contains("Crédito", ignoreCase = true) &&
+            !it.accountType.contains("Credito", ignoreCase = true) &&
+            it.accountType != "CREDIT" &&
+            it.creditLimit == null &&
+            it.brand == null
         }
     }
 
     val cardAccounts = remember(connectedAccounts) {
         connectedAccounts.filter {
             it.accountType.contains("Cartão", ignoreCase = true) ||
-            it.accountType.contains("Credit", ignoreCase = true)
+            it.accountType.contains("Cartao", ignoreCase = true) ||
+            it.accountType.contains("Crédito", ignoreCase = true) ||
+            it.accountType.contains("Credito", ignoreCase = true) ||
+            it.accountType == "CREDIT" ||
+            it.creditLimit != null ||
+            it.brand != null
         }
     }
 
     // Saldo disponível real nas contas bancárias
-    val totalCheckingBalance = remember(checkingAccounts, connectedAccounts, saldoLiquidoPeriodo) {
+    val totalCheckingBalance = remember(checkingAccounts, saldoLiquidoPeriodo) {
         if (checkingAccounts.isNotEmpty()) {
             checkingAccounts.sumOf { it.balance }
-        } else if (connectedAccounts.isNotEmpty()) {
-            connectedAccounts.sumOf { it.balance }
         } else {
             saldoLiquidoPeriodo
         }
     }
 
     // Faturas em Aberto no mês (Cartão de Crédito) - Rigor Contábil
-    val totalOpenBills = remember(periodTransactions, cardAccounts, selectedPeriod) {
-        // Apenas transações que representam compras no cartão no período ou faturas a pagar
-        // NUNCA somar quitações/pagamentos recebidos passados ("Pagamento recebido") nem limites de crédito positivos
-        val cardExpenseTxs = periodTransactions.filter { tx ->
-            !tx.isInternalTransfer &&
-            tx.type != TransactionType.ENTRADA &&
-            !tx.title.contains("Pagamento recebido", ignoreCase = true) &&
-            (
-                tx.paymentMethod.contains("Cartão", ignoreCase = true) ||
-                tx.paymentMethod.contains("Crédito", ignoreCase = true) ||
-                tx.category.contains("Credit card", ignoreCase = true) ||
-                tx.title.contains("Fatura", ignoreCase = true) ||
-                cardAccounts.any { it.id == tx.accountId }
-            )
-        }.sumOf { abs(it.amount) }
-
-        // Se houver conta de cartão com saldo estritamente DEVEDOR (< 0), usa a dívida real
-        // Saldos positivos (limite de crédito concedido de 6k ou 11k) NUNCA são faturas a pagar!
-        val cardDebtAccount = cardAccounts.sumOf { abs(it.balance) }
-
-        if (cardDebtAccount > 0.0) {
-            cardDebtAccount
+    val totalOpenBills = remember(cardAccounts, periodTransactions) {
+        if (cardAccounts.isNotEmpty()) {
+            val billsSum = cardAccounts.sumOf { it.balance }
+            if (billsSum > 0.0) billsSum else cardAccounts.sumOf { abs(it.balance) }
         } else {
-            cardExpenseTxs
+            periodTransactions.filter { tx ->
+                !tx.isInternalTransfer &&
+                tx.type != TransactionType.ENTRADA &&
+                !tx.title.contains("Pagamento recebido", ignoreCase = true) &&
+                (
+                    tx.paymentMethod.contains("Cartão", ignoreCase = true) ||
+                    tx.paymentMethod.contains("Crédito", ignoreCase = true) ||
+                    tx.category.contains("Credit card", ignoreCase = true) ||
+                    tx.title.contains("Fatura", ignoreCase = true)
+                )
+            }.sumOf { abs(it.amount) }
         }
     }
 
@@ -312,15 +326,19 @@ fun DashboardScreen(
             .fillMaxSize()
             .background(iosBg)
     ) {
-        // CONTEÚDO PRINCIPAL ROLÁVEL
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(top = 12.dp, bottom = 130.dp)
+        PullToRefreshBox(
+            isRefreshing = isRefreshing || isSyncing,
+            onRefresh = onRefreshAction,
+            modifier = Modifier.fillMaxSize()
         ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 130.dp)
+            ) {
             item {
                 Spacer(modifier = Modifier.statusBarsPadding())
                 Spacer(modifier = Modifier.height(6.dp))
@@ -912,6 +930,43 @@ fun DashboardScreen(
 
             item {
                 Spacer(modifier = Modifier.height(130.dp))
+            }
+        }
+        }
+
+        // BANNER ANIMADO DE ATUALIZAÇÃO / SINCRONIZAÇÃO
+        AnimatedVisibility(
+            visible = isRefreshing || isSyncing,
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF0F172A).copy(alpha = 0.92f),
+                shadowElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(13.dp),
+                        strokeWidth = 2.dp,
+                        color = Color(0xFF38BDF8)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Atualizando com a Pluggy ($remainingManualSyncs/2 hoje)...",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
 

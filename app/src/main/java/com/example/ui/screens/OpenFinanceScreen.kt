@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -64,7 +66,10 @@ fun OpenFinanceScreen(
     onCreateCustomAccount: (bankName: String, accountType: String, accountNumber: String, initialBalance: Double, autoSync: Boolean) -> Unit,
     onImportStatementText: (rawText: String, targetAccountId: String?, onDone: (Int) -> Unit) -> Unit,
     onDisconnectBank: (id: String) -> Unit,
-    onFetchToken: ((String?) -> Unit) -> Unit = {}
+    onFetchToken: ((String?) -> Unit) -> Unit = {},
+    isSyncing: Boolean = false,
+    remainingManualSyncs: Int = 2,
+    onManualSync: ((Boolean, String) -> Unit) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -76,21 +81,40 @@ fun OpenFinanceScreen(
     var activeConnectToken by remember { mutableStateOf<String?>(null) }
     var isGeneratingToken by remember { mutableStateOf(false) }
     var isSyncingNow by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
+
+    val triggerSync: () -> Unit = {
+        if (!isRefreshing && !isSyncingNow && !isSyncing) {
+            isRefreshing = true
+            isSyncingNow = true
+            onManualSync { allowed, msg ->
+                isRefreshing = false
+                isSyncingNow = false
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     val effectiveAccounts = connectedAccounts
 
     // Saldo Total Consolidado (Contas Correntes e Investimentos)
     val depositAccounts = effectiveAccounts.filter {
         !it.accountType.contains("Cartão", ignoreCase = true) &&
+        !it.accountType.contains("Cartao", ignoreCase = true) &&
         !it.accountType.contains("Crédito", ignoreCase = true) &&
-        it.accountType != "CREDIT"
+        !it.accountType.contains("Credito", ignoreCase = true) &&
+        it.accountType != "CREDIT" &&
+        it.creditLimit == null &&
+        it.brand == null
     }
     val totalBalance = depositAccounts.sumOf { it.balance }
 
     // Cartões de Crédito
     val creditAccounts = effectiveAccounts.filter {
         it.accountType.contains("Cartão", ignoreCase = true) ||
+        it.accountType.contains("Cartao", ignoreCase = true) ||
         it.accountType.contains("Crédito", ignoreCase = true) ||
+        it.accountType.contains("Credito", ignoreCase = true) ||
         it.accountType == "CREDIT" ||
         it.creditLimit != null ||
         it.brand != null
@@ -151,27 +175,30 @@ fun OpenFinanceScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        if (connectedAccounts.isNotEmpty()) {
-                            isSyncingNow = true
-                            var doneCount = 0
-                            connectedAccounts.forEach { acc ->
-                                onSyncAccount(acc.id) {
-                                    doneCount++
-                                    if (doneCount >= connectedAccounts.size) {
-                                        isSyncingNow = false
-                                        Toast.makeText(context, "Contas, faturas e parcelas atualizadas!", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (remainingManualSyncs > 0) Color(0xFFF1F5F9) else Color(0xFFF8FAFC),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .clickable { triggerSync() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isSyncingNow || isSyncing || isRefreshing) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color(0xFF0F172A))
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF0F172A), modifier = Modifier.size(14.dp))
                             }
-                        } else {
-                            Toast.makeText(context, "Nenhuma conta vinculada ainda.", Toast.LENGTH_SHORT).show()
-                        }
-                    }) {
-                        if (isSyncingNow) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "Atualizar Contas")
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "$remainingManualSyncs/2 hoje",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
                         }
                     }
                 },
@@ -181,14 +208,20 @@ fun OpenFinanceScreen(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        PullToRefreshBox(
+            isRefreshing = isRefreshing || isSyncing || isSyncingNow,
+            onRefresh = triggerSync,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 90.dp)
         ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 90.dp)
+            ) {
             // SELETOR DE ABAS ESTILO IOS
             item {
                 Surface(
@@ -1169,6 +1202,7 @@ fun OpenFinanceScreen(
                     }
                 }
             }
+        }
         }
     }
 

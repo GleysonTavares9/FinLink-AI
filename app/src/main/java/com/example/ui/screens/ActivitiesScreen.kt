@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -109,7 +112,10 @@ fun ActivitiesScreen(
     onNavigateToManual: () -> Unit,
     onBack: () -> Unit = {},
     onDeleteExpense: (Long) -> Unit = {},
-    onEditExpense: (Long, String, Double, String, String, String, String?) -> Unit = { _, _, _, _, _, _, _ -> }
+    onEditExpense: (Long, String, Double, String, String, String, String?) -> Unit = { _, _, _, _, _, _, _ -> },
+    isSyncing: Boolean = false,
+    remainingManualSyncs: Int = 2,
+    onManualSync: ((Boolean, String) -> Unit) -> Unit = {}
 ) {
     var isBalanceVisible by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
@@ -238,6 +244,16 @@ fun ActivitiesScreen(
         else -> "Todas as Movimentações"
     }
 
+    val context = LocalContext.current
+    var isRefreshing by remember { mutableStateOf(false) }
+    val onRefreshAction: () -> Unit = {
+        isRefreshing = true
+        onManualSync { allowed, msg ->
+            isRefreshing = false
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+
     Scaffold(
         containerColor = Color.Transparent
     ) { padding ->
@@ -246,15 +262,20 @@ fun ActivitiesScreen(
                 .fillMaxSize()
                 .background(iosBg)
         ) {
-            // LISTA ÚNICA ROLÁVEL COM CABEÇALHO INTEGRADO (RECOLHE NATURALMENTE AO ROLAR)
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 140.dp)
+            PullToRefreshBox(
+                isRefreshing = isRefreshing || isSyncing,
+                onRefresh = onRefreshAction,
+                modifier = Modifier.fillMaxSize()
             ) {
+                // LISTA ÚNICA ROLÁVEL COM CABEÇALHO INTEGRADO (RECOLHE NATURALMENTE AO ROLAR)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 140.dp)
+                ) {
                 // ITEM 1: TOPO EXPANDIDO (STATUS BAR PADDING + PRIVACIDADE + BOTÃO NOVO)
                 item {
                     Spacer(modifier = Modifier.statusBarsPadding())
@@ -561,6 +582,7 @@ fun ActivitiesScreen(
                         }
                     }
                 }
+            }
             }
 
             // =========================================================================================

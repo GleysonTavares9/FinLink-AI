@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -164,14 +166,28 @@ fun CreditCardManagementScreen(
         },
         containerColor = Color(0xFFF8FAFC)
     ) { innerPadding ->
-        LazyColumn(
+        PullToRefreshBox(
+            isRefreshing = isSyncingNow,
+            onRefresh = {
+                if (!isSyncingNow) {
+                    isSyncingNow = true
+                    onManualSync { allowed, msg ->
+                        isSyncingNow = false
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 90.dp)
         ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 90.dp)
+            ) {
             // 1. CARTÃO FÍSICO ULTRA-PREMIUM (ESTILO MASTERCARD BLACK / NUBANK ULTRAVIOLETA)
             item {
                 Card(
@@ -812,6 +828,7 @@ fun CreditCardManagementScreen(
                     }
                 }
             }
+        }
         }
     }
 
