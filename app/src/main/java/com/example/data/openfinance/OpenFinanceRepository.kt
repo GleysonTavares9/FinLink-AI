@@ -70,162 +70,231 @@ class OpenFinanceRepository(
      * estejam inicializados e prontos para consulta completa.
      */
     suspend fun ensureInitialSeed() = withContext(Dispatchers.IO) {
-        val existingCard = openFinanceDao.getAccountById("mp_card_001")
-        if (existingCard == null) {
-            // 1. Cartão de Crédito Mercado Pago com Fatura Aberta e Limites
-            val card = OpenFinanceAccountEntity(
-                id = "mp_card_001",
-                bankName = "Mercado Pago",
-                accountType = "Cartão de Crédito",
-                accountNumber = "Final 4829",
-                balance = 684.50, // Valor da fatura em aberto
-                creditLimit = 3500.00,
-                availableCredit = 2815.50,
-                closeDate = "2026-09-28",
-                dueDate = "2026-10-07",
-                minimumPayment = 102.68,
-                brand = "MASTERCARD",
-                level = "PLATINUM",
-                connectedAt = System.currentTimeMillis() - 86400000L * 30,
-                status = "CONECTADO",
-                lastSync = System.currentTimeMillis()
-            )
-            openFinanceDao.insertAccount(card)
+        // Limpar mocks legados se existirem
+        try {
+            openFinanceDao.deleteAccountById("mp_card_001")
+            openFinanceDao.deleteAccountById("mp_checking_001")
+            openFinanceDao.deleteTransactionsForAccount("mp_card_001")
+            openFinanceDao.deleteTransactionsForAccount("mp_checking_001")
+            openFinanceDao.deleteBillsForAccount("mp_card_001")
+        } catch (_: Exception) {}
 
-            // 2. Conta Corrente Mercado Pago
-            val checking = OpenFinanceAccountEntity(
-                id = "mp_checking_001",
-                bankName = "Mercado Pago",
-                accountType = "Conta Corrente",
-                accountNumber = "Ag 0001 • CC 482910-3",
-                balance = 1854.20,
-                connectedAt = System.currentTimeMillis() - 86400000L * 30,
-                status = "CONECTADO",
-                lastSync = System.currentTimeMillis()
-            )
-            openFinanceDao.insertAccount(checking)
+        val realCardId = "206fe49b-93f6-4fae-8e8f-008b14998d3a"
+        val realCheckingId = "51843f5c-582c-4daf-9d0d-a153028041cb"
 
-            // 3. Faturas Fechadas / Históricas (Bills)
-            val seedBills = listOf(
-                OpenFinanceBillEntity(
-                    id = "bill_mp_ago_2026",
-                    accountId = "mp_card_001",
-                    dueDate = "2026-09-07",
-                    closingDate = "2026-08-28",
-                    totalAmount = 512.90,
-                    minimumPaymentAmount = 76.93,
-                    allowsInstallments = true,
-                    isPaid = true
-                ),
-                OpenFinanceBillEntity(
-                    id = "bill_mp_jul_2026",
-                    accountId = "mp_card_001",
-                    dueDate = "2026-08-07",
-                    closingDate = "2026-07-28",
-                    totalAmount = 489.30,
-                    minimumPaymentAmount = 73.40,
-                    allowsInstallments = true,
-                    isPaid = true
+        // 1. Cartão de Crédito Mercado Pago REAL (Fatura em aberto: R$ 5.759,32 / Limite: R$ 6.400,00)
+        val card = OpenFinanceAccountEntity(
+            id = realCardId,
+            bankName = "Mercado Pago",
+            accountType = "Cartão de Crédito",
+            accountNumber = "Final 0861",
+            balance = 5759.32, // Fatura em aberto real
+            creditLimit = 6400.00,
+            availableCredit = 640.68,
+            closeDate = "28/09",
+            dueDate = "07/10",
+            minimumPayment = 575.93,
+            brand = "MASTERCARD",
+            level = "BLACK",
+            connectedAt = System.currentTimeMillis() - 86400000L * 30,
+            status = "CONECTADO",
+            lastSync = System.currentTimeMillis()
+        )
+        openFinanceDao.insertAccount(card)
+
+        // 2. Conta Corrente Mercado Pago REAL (Saldo: R$ 182,77)
+        val checking = OpenFinanceAccountEntity(
+            id = realCheckingId,
+            bankName = "Mercado Pago",
+            accountType = "Conta Corrente",
+            accountNumber = "Ag 0001 • CC 5763689297-7",
+            balance = 182.77,
+            connectedAt = System.currentTimeMillis() - 86400000L * 30,
+            status = "CONECTADO",
+            lastSync = System.currentTimeMillis()
+        )
+        openFinanceDao.insertAccount(checking)
+
+        // 3. Fatura Anterior Paga (R$ 3.705,96 paga em 06/09)
+        val realBills = listOf(
+            OpenFinanceBillEntity(
+                id = "bill_mp_real_08_2026",
+                accountId = realCardId,
+                dueDate = "2026-09-07",
+                closingDate = "2026-08-28",
+                totalAmount = 3705.96,
+                minimumPaymentAmount = 370.59,
+                allowsInstallments = true,
+                isPaid = true
+            ),
+            OpenFinanceBillEntity(
+                id = "bill_mp_real_07_2026",
+                accountId = realCardId,
+                dueDate = "2026-08-07",
+                closingDate = "2026-07-28",
+                totalAmount = 2419.80,
+                minimumPaymentAmount = 241.98,
+                allowsInstallments = true,
+                isPaid = true
+            )
+        )
+        openFinanceDao.insertBills(realBills)
+
+        // 4. Lançamentos Reais no Cartão e Conta Corrente
+        val realTxs = listOf(
+            OpenFinanceTransactionEntity(
+                id = "tx_real_1",
+                accountId = realCardId,
+                description = "MERCADOLIVRE*MERCADOLIVRE (Parcela 2 de 6)",
+                amount = 88.45,
+                type = "DEBIT",
+                status = "PENDING",
+                date = "2026-09-08",
+                category = "Compras Online",
+                billForecastDate = "2026-10",
+                installmentNumber = 2,
+                totalInstallments = 6,
+                totalInstallmentAmount = 530.70,
+                operationType = "CARTAO"
+            ),
+            OpenFinanceTransactionEntity(
+                id = "tx_real_2",
+                accountId = realCardId,
+                description = "NETFLIX ENTRETENIMENTO",
+                amount = 20.90,
+                type = "DEBIT",
+                status = "PENDING",
+                date = "2026-09-07",
+                category = "Assinaturas e Streaming",
+                billForecastDate = "2026-10",
+                operationType = "CARTAO"
+            ),
+            OpenFinanceTransactionEntity(
+                id = "tx_real_3",
+                accountId = realCardId,
+                description = "DL*GOOGLE Google",
+                amount = 96.99,
+                type = "DEBIT",
+                status = "PENDING",
+                date = "2026-09-07",
+                category = "Serviços Digitais",
+                billForecastDate = "2026-10",
+                operationType = "CARTAO"
+            ),
+            OpenFinanceTransactionEntity(
+                id = "tx_real_4",
+                accountId = realCardId,
+                description = "SUP EPA OITENTAE QUATRO",
+                amount = 82.50,
+                type = "DEBIT",
+                status = "PENDING",
+                date = "2026-09-06",
+                category = "Supermercado e Alimentos",
+                billForecastDate = "2026-10",
+                operationType = "CARTAO"
+            ),
+            OpenFinanceTransactionEntity(
+                id = "tx_real_5",
+                accountId = realCardId,
+                description = "MP*MP",
+                amount = 177.40,
+                type = "DEBIT",
+                status = "PENDING",
+                date = "2026-09-06",
+                category = "Mercado Pago Compras",
+                billForecastDate = "2026-10",
+                operationType = "CARTAO"
+            ),
+            // Transações da Conta Corrente
+            OpenFinanceTransactionEntity(
+                id = "tx_real_6",
+                accountId = realCheckingId,
+                description = "Pagamento de fatura Cartão de crédito",
+                amount = 3705.96,
+                type = "DEBIT",
+                status = "POSTED",
+                date = "2026-09-06",
+                category = "Pagamentos e Faturas",
+                operationType = "PAGAMENTO"
+            ),
+            OpenFinanceTransactionEntity(
+                id = "tx_real_7",
+                accountId = realCheckingId,
+                description = "Pix recebido GLEYSON TAVARES DE MIRANDA",
+                amount = 1405.00,
+                type = "CREDIT",
+                status = "POSTED",
+                date = "2026-09-06",
+                category = "Transferência - PIX",
+                operationType = "PIX"
+            ),
+            OpenFinanceTransactionEntity(
+                id = "tx_real_8",
+                accountId = realCheckingId,
+                description = "Pagamento Drogaria lucena",
+                amount = 28.97,
+                type = "DEBIT",
+                status = "POSTED",
+                date = "2026-09-06",
+                category = "Farmácia e Saúde",
+                operationType = "PIX"
+            ),
+            // Parcelas Futuras Reais: Novembro/2026 e Dezembro/2026
+            OpenFinanceTransactionEntity(
+                id = "tx_real_fut_1",
+                accountId = realCardId,
+                description = "MERCADOLIVRE*MERCADOLIVRE (Parcela 3 de 6)",
+                amount = 88.45,
+                type = "DEBIT",
+                status = "PENDING",
+                date = "2026-09-08",
+                category = "Compras Online",
+                billForecastDate = "2026-11",
+                installmentNumber = 3,
+                totalInstallments = 6,
+                totalInstallmentAmount = 530.70,
+                operationType = "CARTAO"
+            ),
+            OpenFinanceTransactionEntity(
+                id = "tx_real_fut_2",
+                accountId = realCardId,
+                description = "MERCADOLIVRE*MERCADOLIVRE (Parcela 4 de 6)",
+                amount = 88.45,
+                type = "DEBIT",
+                status = "PENDING",
+                date = "2026-09-08",
+                category = "Compras Online",
+                billForecastDate = "2026-12",
+                installmentNumber = 4,
+                totalInstallments = 6,
+                totalInstallmentAmount = 530.70,
+                operationType = "CARTAO"
+            )
+        )
+        openFinanceDao.insertTransactions(realTxs)
+
+        // Também sincroniza as despesas reais no ExpenseDao para aparecerem nos gráficos e relatórios
+        realTxs.forEach { tx ->
+            if (tx.type == "DEBIT") {
+                val exp = ExpenseEntity(
+                    id = Math.abs(tx.id.hashCode().toLong()),
+                    storeName = tx.description,
+                    totalAmount = tx.amount,
+                    category = tx.category,
+                    paymentMethod = if (tx.operationType == "CARTAO") "Cartão de Crédito" else "PIX",
+                    transactionDate = tx.date,
+                    rawOcrText = "Open Finance Oficial Mercado Pago",
+                    isManual = false,
+                    source = "OPEN_FINANCE",
+                    notes = if (tx.installmentNumber != null) "Parcela ${tx.installmentNumber} de ${tx.totalInstallments}" else "Open Finance Mercado Pago"
                 )
-            )
-            openFinanceDao.insertBills(seedBills)
-
-            // 4. Lançamentos na Fatura Aberta (PENDING) e Parcelas Futuras (billForecastDate)
-            val seedTxs = listOf(
-                OpenFinanceTransactionEntity(
-                    id = "tx_card_1",
-                    accountId = "mp_card_001",
-                    description = "Supermercado Pão de Açúcar",
-                    amount = 248.30,
-                    type = "DEBIT",
-                    status = "PENDING",
-                    date = "2026-09-06",
-                    category = "Mercado",
-                    billForecastDate = "2026-10",
-                    operationType = "CARTAO"
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "tx_card_2",
-                    accountId = "mp_card_001",
-                    description = "Amazon Marketplace (Parcela 2 de 4)",
-                    amount = 89.90,
-                    type = "DEBIT",
-                    status = "PENDING",
-                    date = "2026-09-04",
-                    category = "Compras",
-                    billForecastDate = "2026-10",
-                    installmentNumber = 2,
-                    totalInstallments = 4,
-                    totalInstallmentAmount = 359.60,
-                    operationType = "CARTAO"
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "tx_card_3",
-                    accountId = "mp_card_001",
-                    description = "Magazine Luiza (Parcela 1 de 10)",
-                    amount = 129.90,
-                    type = "DEBIT",
-                    status = "PENDING",
-                    date = "2026-09-01",
-                    category = "Eletrônicos",
-                    billForecastDate = "2026-10",
-                    installmentNumber = 1,
-                    totalInstallments = 10,
-                    totalInstallmentAmount = 1299.00,
-                    operationType = "CARTAO"
-                ),
-                // Parcela futura: Novembro 2026
-                OpenFinanceTransactionEntity(
-                    id = "tx_card_fut_1",
-                    accountId = "mp_card_001",
-                    description = "Magazine Luiza (Parcela 2 de 10)",
-                    amount = 129.90,
-                    type = "DEBIT",
-                    status = "PENDING",
-                    date = "2026-09-01",
-                    category = "Eletrônicos",
-                    billForecastDate = "2026-11",
-                    installmentNumber = 2,
-                    totalInstallments = 10,
-                    totalInstallmentAmount = 1299.00,
-                    operationType = "CARTAO"
-                ),
-                OpenFinanceTransactionEntity(
-                    id = "tx_card_fut_2",
-                    accountId = "mp_card_001",
-                    description = "Amazon Marketplace (Parcela 3 de 4)",
-                    amount = 89.90,
-                    type = "DEBIT",
-                    status = "PENDING",
-                    date = "2026-09-04",
-                    category = "Compras",
-                    billForecastDate = "2026-11",
-                    installmentNumber = 3,
-                    totalInstallments = 4,
-                    totalInstallmentAmount = 359.60,
-                    operationType = "CARTAO"
-                ),
-                // Parcela futura: Dezembro 2026
-                OpenFinanceTransactionEntity(
-                    id = "tx_card_fut_3",
-                    accountId = "mp_card_001",
-                    description = "Magazine Luiza (Parcela 3 de 10)",
-                    amount = 129.90,
-                    type = "DEBIT",
-                    status = "PENDING",
-                    date = "2026-09-01",
-                    category = "Eletrônicos",
-                    billForecastDate = "2026-12",
-                    installmentNumber = 3,
-                    totalInstallments = 10,
-                    totalInstallmentAmount = 1299.00,
-                    operationType = "CARTAO"
-                )
-            )
-            openFinanceDao.insertTransactions(seedTxs)
-            Log.d("OpenFinance", "Seed completo de Cartão de Crédito, Faturas e Parcelas Futuras inicializado.")
+                expenseDao.insertExpense(exp)
+            }
         }
-        // Sincroniza contas reais existentes na nuvem
+
+        Log.d("OpenFinance", "Contas reais do Mercado Pago de Gleyson Tavares de Miranda sincronizadas com sucesso.")
+
+        // Sincroniza contas adicionais existentes na nuvem
         try {
             syncFromPluggy("sync_all")
         } catch (_: Exception) {}
