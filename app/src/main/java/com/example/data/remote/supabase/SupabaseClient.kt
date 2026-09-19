@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
  * - Authorization: Bearer <access_token> (quando o usuário está autenticado)
  */
 class SupabaseClient(
-    private val sessionManager: SupabaseSessionManager
+    val sessionManager: SupabaseSessionManager
 ) {
 
     private val okHttpClient = OkHttpClient.Builder()

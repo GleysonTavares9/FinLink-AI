@@ -36,6 +36,9 @@ interface ExpenseDao {
 
     @Query("SELECT * FROM expenses WHERE storeName LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%' ORDER BY transactionDate DESC")
     fun searchExpenses(query: String): Flow<List<ExpenseEntity>>
+
+    @Query("DELETE FROM expenses WHERE rawOcrText = 'Open Finance Oficial Mercado Pago'")
+    suspend fun cleanLegacyMockExpenses()
 }
 
 data class CategoryTotal(

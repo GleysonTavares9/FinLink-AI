@@ -473,11 +473,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
+        override fun onResume() {
         super.onResume()
         // Quando o usuário volta do navegador após conectar uma conta bancária,
-        // sincroniza automaticamente as novas contas cadastradas na nuvem
-        viewModel.syncOpenFinanceAccount("sync_all") {}
+        // sincroniza automaticamente todas as contas cadastradas na nuvem
+        viewModel.syncFromPluggy("sync_all") {}
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -492,17 +492,15 @@ class MainActivity : ComponentActivity() {
             if (uri.host == "auth-callback") {
                 viewModel.handleAuthDeepLink(uri)
             } else if (uri.host == "pluggy-callback") {
-                val itemId = uri.getQueryParameter("itemId")
-                if (itemId != null) {
-                    android.widget.Toast.makeText(this@MainActivity, "Conexão bancária realizada com sucesso! Sincronizando contas...", android.widget.Toast.LENGTH_SHORT).show()
-                    viewModel.syncFromPluggy(itemId) { count ->
-                        android.widget.Toast.makeText(this@MainActivity, "Sincronização concluída: $count transações importadas!", android.widget.Toast.LENGTH_SHORT).show()
-                    }
+                val targetItemId = uri.getQueryParameter("itemId") ?: uri.getQueryParameter("item_id") ?: "sync_all"
+                android.widget.Toast.makeText(this@MainActivity, "Conexão bancária realizada com sucesso! Sincronizando contas...", android.widget.Toast.LENGTH_SHORT).show()
+                viewModel.syncFromPluggy(targetItemId) { count ->
+                    val msg = if (count > 0) "Sincronização concluída: $count transações importadas!" else "Conexão bancária atualizada com sucesso!"
+                    android.widget.Toast.makeText(this@MainActivity, msg, android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
-
 }
 
 /**

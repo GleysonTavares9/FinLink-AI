@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -169,6 +171,7 @@ fun GeminiAssistantScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
+                .imePadding()
         ) {
             // 1. Barra Superior Limpa Apple iOS
             AgentTopBar(
@@ -196,7 +199,7 @@ fun GeminiAssistantScreen(
                         // Mascote Fiscal Inteligente do FinLink AI (Cupom Inteligente + Scanner Holográfico)
                         FiscalFinMascot(
                             isAnimated = true,
-                            sizeDp = 92.dp
+                            sizeDp = 110.dp
                         )
 
                         Spacer(Modifier.height(22.dp))
@@ -349,75 +352,107 @@ fun GeminiAssistantScreen(
 }
 
 /**
- * Mascote Fiscal & Financeiro do FinLink AI (Cupom Fiscal Inteligente + Scanner Holográfico)
- * Design moderno em cores vivas da plataforma (Apple Blue, Emerald e Cyan). ZERO PRETO!
+ * Mascote FinPet do FinLink AI (Bichinho Robozinho Financeiro & Fiscal Inteligente)
+ * Design 3D futurista, expressivo, adorável e dinâmico com iluminação Apple Blue/Cyan,
+ * orelhinhas robóticas com wiggle, olhinhos de anime com brilho, bochechas rosadas,
+ * moedinha holográfica dourada orbitando e sombra de chão com levitação fluida.
  */
 @Composable
 fun FiscalFinMascot(
     modifier: Modifier = Modifier,
     isAnimated: Boolean = true,
-    sizeDp: Dp = 92.dp
+    sizeDp: Dp = 110.dp
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "fiscal_mascot")
+    val infiniteTransition = rememberInfiniteTransition(label = "fin_pet_mascot")
 
-    // Flutuação suave (levitação)
+    // 1. Levitação fluida (sobe e desce com respiração)
     val floatY by if (isAnimated) {
         infiniteTransition.animateFloat(
-            initialValue = -4f,
-            targetValue = 4f,
+            initialValue = -6f,
+            targetValue = 6f,
             animationSpec = infiniteRepeatable(
-                animation = tween(1600, easing = FastOutSlowInEasing),
+                animation = tween(1700, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
-            label = "levitate"
+            label = "pet_float"
         )
     } else {
         remember { mutableStateOf(0f) }
     }
 
-    // Feixe de varredura fiscal laser suave (scanner de cupom)
-    val scanProgress by if (isAnimated) {
-        infiniteTransition.animateFloat(
-            initialValue = 0.20f,
-            targetValue = 0.82f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2200, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "scan_laser"
-        )
-    } else {
-        remember { mutableStateOf(0.5f) }
-    }
-
-    // Brilho dos olhinhos digitais inteligentes
+    // 2. Piscadela suave e expressiva dos olhinhos
     val eyeBlinkScale by if (isAnimated) {
         infiniteTransition.animateFloat(
             initialValue = 1.0f,
-            targetValue = 0.15f,
+            targetValue = 0.08f,
             animationSpec = infiniteRepeatable(
-                animation = tween(2800),
+                animation = tween(2800, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
-            label = "eye_blink"
+            label = "pet_blink"
         )
     } else {
         remember { mutableStateOf(1.0f) }
     }
 
-    // Rotação suave da moeda de finanças flutuante
-    val coinOffset by if (isAnimated) {
+    // 3. Movimento suave das orelhinhas / antenas
+    val earWiggle by if (isAnimated) {
         infiniteTransition.animateFloat(
-            initialValue = -3f,
-            targetValue = 3f,
+            initialValue = -3.5f,
+            targetValue = 3.5f,
             animationSpec = infiniteRepeatable(
-                animation = tween(1200),
+                animation = tween(1400, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pet_ears"
+        )
+    } else {
+        remember { mutableStateOf(0f) }
+    }
+
+    // 4. Pulsação de energia e bochechas
+    val blushPulse by if (isAnimated) {
+        infiniteTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 0.85f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1100, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pet_blush"
+        )
+    } else {
+        remember { mutableStateOf(0.6f) }
+    }
+
+    // 5. Flutuação da Moeda Dourada Holográfica
+    val coinFloat by if (isAnimated) {
+        infiniteTransition.animateFloat(
+            initialValue = -5f,
+            targetValue = 5f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1300, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
             label = "coin_float"
         )
     } else {
         remember { mutableStateOf(0f) }
+    }
+
+    // 6. Varredura suave do scanner laser fiscal
+    val scanProgress by if (isAnimated) {
+        infiniteTransition.animateFloat(
+            initialValue = 0.25f,
+            targetValue = 0.75f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2200, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scanner_laser"
+        )
+    } else {
+        remember { mutableStateOf(0.5f) }
     }
 
     Box(
@@ -429,186 +464,379 @@ fun FiscalFinMascot(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val strokePx = 2.4f * density
+            val cx = w / 2f
+            val cy = h / 2f
+            val densityPx = density
 
-            // Cores da plataforma FinLink AI (sem preto)
+            // Paleta Futurista Premium FinLink
             val primaryBlue = Color(0xFF007AFF)
-            val vibrantCyan = Color(0xFF06B6D4)
-            val emeraldGreen = Color(0xFF10B981)
-            val softAmber = Color(0xFFF59E0B)
+            val electricCyan = Color(0xFF06B6D4)
+            val brightMint = Color(0xFF10B981)
+            val amberGold = Color(0xFFF59E0B)
+            val deepNavyGlass = Color(0xFF0B132B)
+            val softBlushPink = Color(0xFFFF4081)
 
-            // 1. Silhueta do Cupom Fiscal Inteligente (com topo arredondado e base denteada de nota fiscal)
-            val ticketLeft = w * 0.22f
-            val ticketRight = w * 0.78f
-            val ticketTop = h * 0.12f
-            val ticketBottom = h * 0.88f
-
-            val receiptPath = Path().apply {
-                // Topo arredondado
-                moveTo(ticketLeft + 12f, ticketTop)
-                lineTo(ticketRight - 12f, ticketTop)
-                cubicTo(ticketRight, ticketTop, ticketRight, ticketTop, ticketRight, ticketTop + 12f)
-
-                // Lado Direito reto
-                lineTo(ticketRight, ticketBottom)
-
-                // Base Denteada / Serrilhada clássica de Cupom Fiscal (Zig-zag)
-                val teethCount = 5
-                val teethWidth = (ticketRight - ticketLeft) / teethCount
-                for (i in 0 until teethCount) {
-                    val toothStartX = ticketRight - (i * teethWidth)
-                    val toothMidX = toothStartX - (teethWidth / 2f)
-                    val toothEndX = toothStartX - teethWidth
-                    lineTo(toothMidX, ticketBottom - 6f)
-                    lineTo(toothEndX, ticketBottom)
-                }
-
-                // Lado Esquerdo reto subindo
-                lineTo(ticketLeft, ticketTop + 12f)
-                cubicTo(ticketLeft, ticketTop, ticketLeft, ticketTop, ticketLeft + 12f, ticketTop)
-                close()
-            }
-
-            // Fundo perolado do Cupom com gradiente suave
-            drawPath(
-                path = receiptPath,
-                brush = Brush.verticalGradient(
+            // -------------------------------------------------------------
+            // A. SOMBRA DO CHÃO DINÂMICA (Aumenta/Diminui com a levitação)
+            // -------------------------------------------------------------
+            val shadowFactor = (1f - (floatY / 24f)).coerceIn(0.7f, 1.3f)
+            drawOval(
+                brush = Brush.radialGradient(
                     colors = listOf(
+                        Color(0x2E007AFF),
+                        Color(0x1206B6D4),
+                        Color.Transparent
+                    ),
+                    center = Offset(cx, h * 0.94f),
+                    radius = w * 0.36f * shadowFactor
+                ),
+                topLeft = Offset(cx - (w * 0.34f * shadowFactor), h * 0.91f),
+                size = Size(w * 0.68f * shadowFactor, h * 0.08f * shadowFactor)
+            )
+
+            // -------------------------------------------------------------
+            // B. ORELHINHAS / ANTENAS ROBÓTICAS COM PONTAS NEON ILUMINADAS
+            // -------------------------------------------------------------
+            val earW = w * 0.11f
+            val earH = h * 0.22f
+
+            // Orelha Esquerda
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(electricCyan, primaryBlue)
+                ),
+                topLeft = Offset(w * 0.20f + (earWiggle * 0.6f * densityPx), h * 0.06f),
+                size = Size(earW, earH),
+                cornerRadius = CornerRadius(earW / 2f, earW / 2f)
+            )
+            // Ponta Neon Esquerda
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.White, brightMint),
+                    center = Offset(w * 0.20f + (earW / 2f) + (earWiggle * 0.6f * densityPx), h * 0.07f),
+                    radius = earW * 0.7f
+                ),
+                radius = earW * 0.45f,
+                center = Offset(w * 0.20f + (earW / 2f) + (earWiggle * 0.6f * densityPx), h * 0.07f)
+            )
+
+            // Orelha Direita
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(electricCyan, primaryBlue)
+                ),
+                topLeft = Offset(w * 0.69f - (earWiggle * 0.6f * densityPx), h * 0.06f),
+                size = Size(earW, earH),
+                cornerRadius = CornerRadius(earW / 2f, earW / 2f)
+            )
+            // Ponta Neon Direita
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.White, brightMint),
+                    center = Offset(w * 0.69f + (earW / 2f) - (earWiggle * 0.6f * densityPx), h * 0.07f),
+                    radius = earW * 0.7f
+                ),
+                radius = earW * 0.45f,
+                center = Offset(w * 0.69f + (earW / 2f) - (earWiggle * 0.6f * densityPx), h * 0.07f)
+            )
+
+            // -------------------------------------------------------------
+            // C. BRAÇOS / PATINHAS ROBÓTICAS FLUTUANTES LATERAIS
+            // -------------------------------------------------------------
+            val pawSize = w * 0.13f
+            // Patinha Esquerda
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.White, Color(0xFFE0F2FE), primaryBlue.copy(alpha = 0.4f)),
+                    center = Offset(w * 0.16f, h * 0.60f + (floatY * 0.4f * densityPx)),
+                    radius = pawSize
+                ),
+                radius = pawSize / 2f,
+                center = Offset(w * 0.16f, h * 0.60f + (floatY * 0.4f * densityPx))
+            )
+            drawCircle(
+                color = primaryBlue.copy(alpha = 0.6f),
+                radius = pawSize / 2f,
+                center = Offset(w * 0.16f, h * 0.60f + (floatY * 0.4f * densityPx)),
+                style = Stroke(width = 1.2f * densityPx)
+            )
+
+            // Patinha Direita
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.White, Color(0xFFE0F2FE), primaryBlue.copy(alpha = 0.4f)),
+                    center = Offset(w * 0.84f, h * 0.60f - (floatY * 0.4f * densityPx)),
+                    radius = pawSize
+                ),
+                radius = pawSize / 2f,
+                center = Offset(w * 0.84f, h * 0.60f - (floatY * 0.4f * densityPx))
+            )
+            drawCircle(
+                color = primaryBlue.copy(alpha = 0.6f),
+                radius = pawSize / 2f,
+                center = Offset(w * 0.84f, h * 0.60f - (floatY * 0.4f * densityPx)),
+                style = Stroke(width = 1.2f * densityPx)
+            )
+
+            // -------------------------------------------------------------
+            // D. CORPINHO FOFO CHUBBY ROBÓTICO (Pérola Metalizada)
+            // -------------------------------------------------------------
+            val bodyLeft = w * 0.22f
+            val bodyTop = h * 0.15f
+            val bodyW = w * 0.56f
+            val bodyH = h * 0.70f
+            val bodyRadius = bodyW * 0.46f
+
+            // Halo / Brilho Externo Suave
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    listOf(primaryBlue.copy(alpha = 0.25f), electricCyan.copy(alpha = 0.35f))
+                ),
+                topLeft = Offset(bodyLeft - 3.dp.toPx(), bodyTop - 3.dp.toPx()),
+                size = Size(bodyW + 6.dp.toPx(), bodyH + 6.dp.toPx()),
+                cornerRadius = CornerRadius(bodyRadius + 3.dp.toPx(), bodyRadius + 3.dp.toPx())
+            )
+
+            // Preenchimento Branco Pérola Esmaltado
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(
                         Color(0xFFFFFFFF),
                         Color(0xFFF8FAFC),
-                        Color(0xFFF0FDF4)
+                        Color(0xFFE0F2FE),
+                        Color(0xFFBAE6FD)
                     )
                 ),
-                style = Fill
+                topLeft = Offset(bodyLeft, bodyTop),
+                size = Size(bodyW, bodyH),
+                cornerRadius = CornerRadius(bodyRadius, bodyRadius)
             )
 
-            // Contorno elegante em degradê Apple Blue e Cyan
-            drawPath(
-                path = receiptPath,
+            // Contorno com Degradê Azul e Ciano Apple
+            drawRoundRect(
                 brush = Brush.linearGradient(
-                    colors = listOf(primaryBlue, vibrantCyan),
-                    start = Offset(ticketLeft, ticketTop),
-                    end = Offset(ticketRight, ticketBottom)
+                    listOf(primaryBlue, electricCyan)
                 ),
-                style = Stroke(
-                    width = strokePx,
-                    cap = StrokeCap.Round,
-                    join = StrokeJoin.Round
+                topLeft = Offset(bodyLeft, bodyTop),
+                size = Size(bodyW, bodyH),
+                cornerRadius = CornerRadius(bodyRadius, bodyRadius),
+                style = Stroke(width = 2.4f * densityPx)
+            )
+
+            // -------------------------------------------------------------
+            // E. VISOR CYBER GLASS (Rostinho de Vidro Escuro Tecnológico)
+            // -------------------------------------------------------------
+            val visorLeft = w * 0.28f
+            val visorTop = h * 0.26f
+            val visorW = w * 0.44f
+            val visorH = h * 0.32f
+            val visorRadius = visorW * 0.38f
+
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(deepNavyGlass, Color(0xFF1E293B), Color(0xFF0F172A))
+                ),
+                topLeft = Offset(visorLeft, visorTop),
+                size = Size(visorW, visorH),
+                cornerRadius = CornerRadius(visorRadius, visorRadius)
+            )
+
+            // Contorno Ciano Brilhante do Visor
+            drawRoundRect(
+                brush = Brush.horizontalGradient(
+                    listOf(primaryBlue.copy(alpha = 0.6f), electricCyan.copy(alpha = 0.9f))
+                ),
+                topLeft = Offset(visorLeft, visorTop),
+                size = Size(visorW, visorH),
+                cornerRadius = CornerRadius(visorRadius, visorRadius),
+                style = Stroke(width = 1.6f * densityPx)
+            )
+
+            // Reflexo Curvo de Vidro Glossy (Estilo Apple Glass)
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.35f), Color.Transparent)
+                ),
+                topLeft = Offset(visorLeft + 4.dp.toPx(), visorTop + 3.dp.toPx()),
+                size = Size(visorW - 8.dp.toPx(), visorH * 0.38f),
+                cornerRadius = CornerRadius(visorRadius * 0.8f, visorRadius * 0.8f)
+            )
+
+            // -------------------------------------------------------------
+            // F. OLHINHOS DE ANIME GRANDES, VIVOS E EXPRESSIVOS (Com Brilho)
+            // -------------------------------------------------------------
+            val eyesY = visorTop + (visorH * 0.44f)
+            val eyeRX = w * 0.052f
+            val eyeRY = h * 0.082f * eyeBlinkScale.coerceAtLeast(0.06f)
+
+            // Olho Esquerdo (Ciano Luminoso)
+            val leftEyeX = visorLeft + (visorW * 0.31f)
+            drawOval(
+                brush = Brush.verticalGradient(
+                    listOf(Color(0xFF38BDF8), electricCyan, primaryBlue)
+                ),
+                topLeft = Offset(leftEyeX - eyeRX, eyesY - eyeRY),
+                size = Size(eyeRX * 2, eyeRY * 2)
+            )
+            // Brilho estrela / reflexo principal olho esquerdo
+            if (eyeBlinkScale > 0.4f) {
+                drawCircle(
+                    color = Color.White,
+                    radius = eyeRX * 0.44f,
+                    center = Offset(leftEyeX + (eyeRX * 0.28f), eyesY - (eyeRY * 0.28f))
                 )
-            )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.8f),
+                    radius = eyeRX * 0.22f,
+                    center = Offset(leftEyeX - (eyeRX * 0.32f), eyesY + (eyeRY * 0.32f))
+                )
+            }
 
-            // 2. Selo Holográfico de NF no Topo (Dobra de segurança)
-            drawCircle(
-                color = emeraldGreen,
-                radius = 4.dp.toPx(),
-                center = Offset((ticketLeft + ticketRight) / 2f, ticketTop + 9.dp.toPx())
-            )
-
-            // 3. Olhos Digitais Expressivos (Visor Inteligente)
-            val eyesY = h * 0.38f
-            val eyeRadiusX = 4.dp.toPx()
-            val eyeRadiusY = 5.dp.toPx() * eyeBlinkScale
-
-            // Olho Esquerdo
+            // Olho Direito (Ciano Luminoso)
+            val rightEyeX = visorLeft + (visorW * 0.69f)
             drawOval(
-                color = primaryBlue,
-                topLeft = Offset(w * 0.37f - eyeRadiusX, eyesY - eyeRadiusY),
-                size = Size(eyeRadiusX * 2, eyeRadiusY * 2)
+                brush = Brush.verticalGradient(
+                    listOf(Color(0xFF38BDF8), electricCyan, primaryBlue)
+                ),
+                topLeft = Offset(rightEyeX - eyeRX, eyesY - eyeRY),
+                size = Size(eyeRX * 2, eyeRY * 2)
             )
-            // Brilho do olho esquerdo
-            drawCircle(
-                color = Color.White,
-                radius = 1.3f.dp.toPx(),
-                center = Offset(w * 0.37f - 1.dp.toPx(), eyesY - 1.dp.toPx())
-            )
+            // Brilho estrela / reflexo principal olho direito
+            if (eyeBlinkScale > 0.4f) {
+                drawCircle(
+                    color = Color.White,
+                    radius = eyeRX * 0.44f,
+                    center = Offset(rightEyeX + (eyeRX * 0.28f), eyesY - (eyeRY * 0.28f))
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.8f),
+                    radius = eyeRX * 0.22f,
+                    center = Offset(rightEyeX - (eyeRX * 0.32f), eyesY + (eyeRY * 0.32f))
+                )
+            }
 
-            // Olho Direito
+            // -------------------------------------------------------------
+            // G. BOCHECHAS ROSADAS FOFAS (BLUSH CUTE)
+            // -------------------------------------------------------------
+            val blushY = eyesY + (h * 0.058f)
             drawOval(
-                color = primaryBlue,
-                topLeft = Offset(w * 0.63f - eyeRadiusX, eyesY - eyeRadiusY),
-                size = Size(eyeRadiusX * 2, eyeRadiusY * 2)
+                color = softBlushPink.copy(alpha = 0.40f * blushPulse),
+                topLeft = Offset(leftEyeX - (eyeRX * 1.1f), blushY - 2.dp.toPx()),
+                size = Size(eyeRX * 2.2f, 4.5f.dp.toPx())
             )
-            // Brilho do olho direito
-            drawCircle(
-                color = Color.White,
-                radius = 1.3f.dp.toPx(),
-                center = Offset(w * 0.63f - 1.dp.toPx(), eyesY - 1.dp.toPx())
+            drawOval(
+                color = softBlushPink.copy(alpha = 0.40f * blushPulse),
+                topLeft = Offset(rightEyeX - (eyeRX * 1.1f), blushY - 2.dp.toPx()),
+                size = Size(eyeRX * 2.2f, 4.5f.dp.toPx())
             )
 
-            // Sorriso amigável
+            // -------------------------------------------------------------
+            // H. SORRISO AMIGÁVEL MICRO-NEON
+            // -------------------------------------------------------------
             val smilePath = Path().apply {
-                moveTo(w * 0.46f, h * 0.48f)
-                cubicTo(w * 0.48f, h * 0.52f, w * 0.52f, h * 0.52f, w * 0.54f, h * 0.48f)
+                val mouthY = eyesY + (h * 0.048f)
+                moveTo(cx - (w * 0.038f), mouthY)
+                cubicTo(
+                    cx - (w * 0.015f), mouthY + (h * 0.024f),
+                    cx + (w * 0.015f), mouthY + (h * 0.024f),
+                    cx + (w * 0.038f), mouthY
+                )
             }
             drawPath(
                 path = smilePath,
+                color = electricCyan,
+                style = Stroke(width = 1.8f * densityPx, cap = StrokeCap.Round)
+            )
+
+            // -------------------------------------------------------------
+            // I. EMBLEMA FISCAL / CORAÇÃO TECH NO PEITO
+            // -------------------------------------------------------------
+            val chestY = h * 0.68f
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color.White, brightMint, electricCyan),
+                    center = Offset(cx, chestY),
+                    radius = 8.dp.toPx()
+                ),
+                radius = 6.dp.toPx(),
+                center = Offset(cx, chestY)
+            )
+            drawCircle(
                 color = primaryBlue,
-                style = Stroke(width = 1.6f * density, cap = StrokeCap.Round)
+                radius = 6.dp.toPx(),
+                center = Offset(cx, chestY),
+                style = Stroke(width = 1.2f * densityPx)
             )
 
-            // 4. Linhas micro-fiscais do cupom (Representando itens da NF)
-            val lineY1 = h * 0.58f
-            val lineY2 = h * 0.66f
-            val lineY3 = h * 0.74f
-
-            drawLine(
-                color = Color(0xFFCBD5E1),
-                start = Offset(ticketLeft + 14.dp.toPx(), lineY1),
-                end = Offset(ticketRight - 14.dp.toPx(), lineY1),
-                strokeWidth = 1.6f * density,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = Color(0xFFE2E8F0),
-                start = Offset(ticketLeft + 14.dp.toPx(), lineY2),
-                end = Offset(ticketRight - 22.dp.toPx(), lineY2),
-                strokeWidth = 1.6f * density,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = Color(0xFFE2E8F0),
-                start = Offset(ticketLeft + 14.dp.toPx(), lineY3),
-                end = Offset(ticketRight - 18.dp.toPx(), lineY3),
-                strokeWidth = 1.6f * density,
-                cap = StrokeCap.Round
-            )
-
-            // 5. Feixe de Scanner Laser Holográfico Suave (Auditando NF em tempo real)
-            val scanY = h * scanProgress
+            // -------------------------------------------------------------
+            // J. FEIXE HOLOGRÁFICO DE AUDITORIA FISCAL (Scanner Suave)
+            // -------------------------------------------------------------
+            val laserY = visorTop + (visorH * scanProgress)
             drawLine(
                 brush = Brush.horizontalGradient(
                     listOf(
                         Color.Transparent,
-                        emeraldGreen.copy(alpha = 0.85f),
-                        vibrantCyan.copy(alpha = 0.95f),
-                        emeraldGreen.copy(alpha = 0.85f),
+                        brightMint.copy(alpha = 0.7f),
+                        Color.White.copy(alpha = 0.95f),
+                        brightMint.copy(alpha = 0.7f),
                         Color.Transparent
                     )
                 ),
-                start = Offset(ticketLeft - 4.dp.toPx(), scanY),
-                end = Offset(ticketRight + 4.dp.toPx(), scanY),
-                strokeWidth = 2.dp.toPx(),
+                start = Offset(visorLeft + 4.dp.toPx(), laserY),
+                end = Offset(visorLeft + visorW - 4.dp.toPx(), laserY),
+                strokeWidth = 1.5f * densityPx,
                 cap = StrokeCap.Round
             )
 
-            // 6. Moedinha Financeira Flutuante (% / Finanças) orbitando
-            val coinCenterX = ticketRight + 8.dp.toPx()
-            val coinCenterY = h * 0.35f + coinOffset.dp.toPx()
+            // -------------------------------------------------------------
+            // K. MOEDINHA DOURADA HOLOGRÁFICA 3D ORBITANDO AO LADO
+            // -------------------------------------------------------------
+            val coinCX = w * 0.84f
+            val coinCY = h * 0.32f + (coinFloat * densityPx)
+            val coinR = 8.5f.dp.toPx()
 
+            // Brilho externo da moeda
+            drawCircle(
+                color = amberGold.copy(alpha = 0.28f),
+                radius = coinR * 1.5f,
+                center = Offset(coinCX, coinCY)
+            )
+            // Corpo da moeda dourada
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(softAmber, Color(0xFFD97706)),
-                    center = Offset(coinCenterX, coinCenterY),
-                    radius = 8.dp.toPx()
+                    listOf(Color(0xFFFEF08A), amberGold, Color(0xFFB45309)),
+                    center = Offset(coinCX - 2.dp.toPx(), coinCY - 2.dp.toPx()),
+                    radius = coinR * 1.2f
                 ),
-                radius = 7.dp.toPx(),
-                center = Offset(coinCenterX, coinCenterY)
+                radius = coinR,
+                center = Offset(coinCX, coinCY)
+            )
+            // Borda interna da moeda
+            drawCircle(
+                color = Color.White.copy(alpha = 0.85f),
+                radius = coinR * 0.75f,
+                center = Offset(coinCX, coinCY),
+                style = Stroke(width = 1.1f * densityPx)
+            )
+            // Brilho estelar próximo à moeda
+            drawCircle(
+                color = Color.White,
+                radius = 1.6f.dp.toPx(),
+                center = Offset(coinCX - (coinR * 0.4f), coinCY - (coinR * 0.4f))
+            )
+
+            // Estrelinhas cintilantes mágicas
+            val star1X = w * 0.14f
+            val star1Y = h * 0.30f - (coinFloat * 0.7f * densityPx)
+            drawCircle(
+                color = electricCyan.copy(alpha = 0.85f),
+                radius = 2.dp.toPx(),
+                center = Offset(star1X, star1Y)
             )
             drawCircle(
-                color = Color.White.copy(alpha = 0.7f),
-                radius = 5.dp.toPx(),
-                center = Offset(coinCenterX, coinCenterY),
-                style = Stroke(width = 1.dp.toPx())
+                color = Color.White,
+                radius = 1.dp.toPx(),
+                center = Offset(star1X, star1Y)
             )
         }
     }
@@ -1338,85 +1566,94 @@ private fun AgentBottomInputBar(
     onSend: () -> Unit,
     onAddClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .border(1.dp, Color(0xFFE2E8F0))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
     ) {
-        // Botão (+)
-        IconButton(onClick = onAddClick) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFF1F5F9)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Adicionar",
-                    tint = Color(0xFF334155),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        Spacer(Modifier.width(6.dp))
-
-        // Campo de Texto estilo Pill Apple iOS
-        Box(
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .height(44.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color(0xFFF1F5F9))
-                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(22.dp))
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.CenterStart
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (text.isEmpty()) {
-                Text(
-                    text = "Envie uma mensagem",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 14.sp
-                )
+            // Botão (+)
+            IconButton(
+                onClick = onAddClick,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFF1F5F9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Adicionar",
+                        tint = Color(0xFF334155),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
-            BasicTextField(
-                value = text,
-                onValueChange = onTextChange,
-                textStyle = TextStyle(color = Color(0xFF0F172A), fontSize = 14.sp),
-                cursorBrush = SolidColor(Color(0xFF007AFF)),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { onSend() })
-            )
-        }
 
-        Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
 
-        // Botão de Enviar ou Microfone
-        IconButton(
-            onClick = {
-                if (text.isNotBlank()) onSend()
-            }
-        ) {
+            // Campo de Texto estilo Pill Apple iOS
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(if (text.isNotBlank()) Color(0xFF007AFF) else Color(0xFFF1F5F9)),
-                contentAlignment = Alignment.Center
+                    .weight(1f)
+                    .height(46.dp)
+                    .clip(RoundedCornerShape(23.dp))
+                    .background(Color(0xFFF1F5F9))
+                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(23.dp))
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.CenterStart
             ) {
-                Icon(
-                    imageVector = if (text.isNotBlank()) Icons.AutoMirrored.Filled.Send else Icons.Default.Mic,
-                    contentDescription = if (text.isNotBlank()) "Enviar" else "Microfone",
-                    tint = if (text.isNotBlank()) Color.White else Color(0xFF64748B),
-                    modifier = Modifier.size(19.dp)
+                if (text.isEmpty()) {
+                    Text(
+                        text = "Envie uma mensagem...",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 14.sp
+                    )
+                }
+                BasicTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    textStyle = TextStyle(color = Color(0xFF0F172A), fontSize = 14.sp),
+                    cursorBrush = SolidColor(Color(0xFF007AFF)),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { onSend() })
                 )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            // Botão de Enviar ou Microfone
+            IconButton(
+                onClick = {
+                    if (text.isNotBlank()) onSend()
+                },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(if (text.isNotBlank()) Color(0xFF007AFF) else Color(0xFFF1F5F9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (text.isNotBlank()) Icons.AutoMirrored.Filled.Send else Icons.Default.Mic,
+                        contentDescription = if (text.isNotBlank()) "Enviar" else "Microfone",
+                        tint = if (text.isNotBlank()) Color.White else Color(0xFF64748B),
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
         }
     }

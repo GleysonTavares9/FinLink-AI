@@ -70,264 +70,75 @@ class OpenFinanceRepository(
      * estejam inicializados e prontos para consulta completa.
      */
     suspend fun ensureInitialSeed() = withContext(Dispatchers.IO) {
-        // Limpar mocks legados se existirem
+        // Limpar mocks e seeds legados do SQLite local
         try {
-            openFinanceDao.deleteAccountById("mp_card_001")
-            openFinanceDao.deleteAccountById("mp_checking_001")
-            openFinanceDao.deleteTransactionsForAccount("mp_card_001")
-            openFinanceDao.deleteTransactionsForAccount("mp_checking_001")
-            openFinanceDao.deleteBillsForAccount("mp_card_001")
-        } catch (_: Exception) {}
-
-        val realCardId = "206fe49b-93f6-4fae-8e8f-008b14998d3a"
-        val realCheckingId = "51843f5c-582c-4daf-9d0d-a153028041cb"
-
-        // 1. Cartão de Crédito Mercado Pago REAL (Fatura em aberto: R$ 5.759,32 / Limite: R$ 6.400,00)
-        val card = OpenFinanceAccountEntity(
-            id = realCardId,
-            bankName = "Mercado Pago",
-            accountType = "Cartão de Crédito",
-            accountNumber = "Final 0861",
-            balance = 5759.32, // Fatura em aberto real
-            creditLimit = 6400.00,
-            availableCredit = 640.68,
-            closeDate = "28/09",
-            dueDate = "07/10",
-            minimumPayment = 575.93,
-            brand = "MASTERCARD",
-            level = "BLACK",
-            connectedAt = System.currentTimeMillis() - 86400000L * 30,
-            status = "CONECTADO",
-            lastSync = System.currentTimeMillis()
-        )
-        openFinanceDao.insertAccount(card)
-
-        // 2. Conta Corrente Mercado Pago REAL (Saldo: R$ 182,77)
-        val checking = OpenFinanceAccountEntity(
-            id = realCheckingId,
-            bankName = "Mercado Pago",
-            accountType = "Conta Corrente",
-            accountNumber = "Ag 0001 • CC 5763689297-7",
-            balance = 182.77,
-            connectedAt = System.currentTimeMillis() - 86400000L * 30,
-            status = "CONECTADO",
-            lastSync = System.currentTimeMillis()
-        )
-        openFinanceDao.insertAccount(checking)
-
-        // 3. Fatura Anterior Paga (R$ 3.705,96 paga em 06/09)
-        val realBills = listOf(
-            OpenFinanceBillEntity(
-                id = "bill_mp_real_08_2026",
-                accountId = realCardId,
-                dueDate = "2026-09-07",
-                closingDate = "2026-08-28",
-                totalAmount = 3705.96,
-                minimumPaymentAmount = 370.59,
-                allowsInstallments = true,
-                isPaid = true
-            ),
-            OpenFinanceBillEntity(
-                id = "bill_mp_real_07_2026",
-                accountId = realCardId,
-                dueDate = "2026-08-07",
-                closingDate = "2026-07-28",
-                totalAmount = 2419.80,
-                minimumPaymentAmount = 241.98,
-                allowsInstallments = true,
-                isPaid = true
-            )
-        )
-        openFinanceDao.insertBills(realBills)
-
-        // 4. Lançamentos Reais no Cartão e Conta Corrente
-        val realTxs = listOf(
-            OpenFinanceTransactionEntity(
-                id = "tx_real_1",
-                accountId = realCardId,
-                description = "MERCADOLIVRE*MERCADOLIVRE (Parcela 2 de 6)",
-                amount = 88.45,
-                type = "DEBIT",
-                status = "PENDING",
-                date = "2026-09-08",
-                category = "Compras Online",
-                billForecastDate = "2026-10",
-                installmentNumber = 2,
-                totalInstallments = 6,
-                totalInstallmentAmount = 530.70,
-                operationType = "CARTAO"
-            ),
-            OpenFinanceTransactionEntity(
-                id = "tx_real_2",
-                accountId = realCardId,
-                description = "NETFLIX ENTRETENIMENTO",
-                amount = 20.90,
-                type = "DEBIT",
-                status = "PENDING",
-                date = "2026-09-07",
-                category = "Assinaturas e Streaming",
-                billForecastDate = "2026-10",
-                operationType = "CARTAO"
-            ),
-            OpenFinanceTransactionEntity(
-                id = "tx_real_3",
-                accountId = realCardId,
-                description = "DL*GOOGLE Google",
-                amount = 96.99,
-                type = "DEBIT",
-                status = "PENDING",
-                date = "2026-09-07",
-                category = "Serviços Digitais",
-                billForecastDate = "2026-10",
-                operationType = "CARTAO"
-            ),
-            OpenFinanceTransactionEntity(
-                id = "tx_real_4",
-                accountId = realCardId,
-                description = "SUP EPA OITENTAE QUATRO",
-                amount = 82.50,
-                type = "DEBIT",
-                status = "PENDING",
-                date = "2026-09-06",
-                category = "Supermercado e Alimentos",
-                billForecastDate = "2026-10",
-                operationType = "CARTAO"
-            ),
-            OpenFinanceTransactionEntity(
-                id = "tx_real_5",
-                accountId = realCardId,
-                description = "MP*MP",
-                amount = 177.40,
-                type = "DEBIT",
-                status = "PENDING",
-                date = "2026-09-06",
-                category = "Mercado Pago Compras",
-                billForecastDate = "2026-10",
-                operationType = "CARTAO"
-            ),
-            // Transações da Conta Corrente
-            OpenFinanceTransactionEntity(
-                id = "tx_real_6",
-                accountId = realCheckingId,
-                description = "Pagamento de fatura Cartão de crédito",
-                amount = 3705.96,
-                type = "DEBIT",
-                status = "POSTED",
-                date = "2026-09-06",
-                category = "Pagamentos e Faturas",
-                operationType = "PAGAMENTO"
-            ),
-            OpenFinanceTransactionEntity(
-                id = "tx_real_7",
-                accountId = realCheckingId,
-                description = "Pix recebido GLEYSON TAVARES DE MIRANDA",
-                amount = 1405.00,
-                type = "CREDIT",
-                status = "POSTED",
-                date = "2026-09-06",
-                category = "Transferência - PIX",
-                operationType = "PIX"
-            ),
-            OpenFinanceTransactionEntity(
-                id = "tx_real_8",
-                accountId = realCheckingId,
-                description = "Pagamento Drogaria lucena",
-                amount = 28.97,
-                type = "DEBIT",
-                status = "POSTED",
-                date = "2026-09-06",
-                category = "Farmácia e Saúde",
-                operationType = "PIX"
-            ),
-            // Parcelas Futuras Reais: Novembro/2026 e Dezembro/2026
-            OpenFinanceTransactionEntity(
-                id = "tx_real_fut_1",
-                accountId = realCardId,
-                description = "MERCADOLIVRE*MERCADOLIVRE (Parcela 3 de 6)",
-                amount = 88.45,
-                type = "DEBIT",
-                status = "PENDING",
-                date = "2026-09-08",
-                category = "Compras Online",
-                billForecastDate = "2026-11",
-                installmentNumber = 3,
-                totalInstallments = 6,
-                totalInstallmentAmount = 530.70,
-                operationType = "CARTAO"
-            ),
-            OpenFinanceTransactionEntity(
-                id = "tx_real_fut_2",
-                accountId = realCardId,
-                description = "MERCADOLIVRE*MERCADOLIVRE (Parcela 4 de 6)",
-                amount = 88.45,
-                type = "DEBIT",
-                status = "PENDING",
-                date = "2026-09-08",
-                category = "Compras Online",
-                billForecastDate = "2026-12",
-                installmentNumber = 4,
-                totalInstallments = 6,
-                totalInstallmentAmount = 530.70,
-                operationType = "CARTAO"
-            )
-        )
-        openFinanceDao.insertTransactions(realTxs)
-
-        // Também sincroniza as despesas reais no ExpenseDao para aparecerem nos gráficos e relatórios
-        realTxs.forEach { tx ->
-            if (tx.type == "DEBIT") {
-                val exp = ExpenseEntity(
-                    id = Math.abs(tx.id.hashCode().toLong()),
-                    storeName = tx.description,
-                    totalAmount = tx.amount,
-                    category = tx.category,
-                    paymentMethod = if (tx.operationType == "CARTAO") "Cartão de Crédito" else "PIX",
-                    transactionDate = tx.date,
-                    rawOcrText = "Open Finance Oficial Mercado Pago",
-                    isManual = false,
-                    source = "OPEN_FINANCE",
-                    notes = if (tx.installmentNumber != null) "Parcela ${tx.installmentNumber} de ${tx.totalInstallments}" else "Open Finance Mercado Pago"
-                )
-                expenseDao.insertExpense(exp)
-            }
+            openFinanceDao.cleanLegacyMockAccounts()
+            openFinanceDao.cleanLegacyMockTransactions()
+            openFinanceDao.cleanLegacyMockBills()
+            expenseDao.cleanLegacyMockExpenses()
+            Log.d("OpenFinance", "Limpeza de dados legados executada com sucesso.")
+        } catch (e: Exception) {
+            Log.e("OpenFinance", "Erro ao limpar dados legados: ${e.message}")
         }
 
-        Log.d("OpenFinance", "Contas reais do Mercado Pago de Gleyson Tavares de Miranda sincronizadas com sucesso.")
-
-        // Sincroniza contas adicionais existentes na nuvem
+        // Sincroniza contas reais existentes na nuvem / Pluggy
         try {
             syncFromPluggy("sync_all")
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e("OpenFinance", "Erro ao sincronizar Pluggy inicial: ${e.message}")
+        }
     }
 
     suspend fun fetchPluggyConnectToken(): String? = withContext(Dispatchers.IO) {
-        supabaseClient?.let { sb ->
-            try {
-                val tokenUrl = "${sb.baseUrl}/functions/v1/pluggy-connect?action=token"
-                val req = Request.Builder()
-                    .url(tokenUrl)
-                    .addHeader("apikey", sb.anonKey)
-                    .addHeader("Authorization", "Bearer ${sb.anonKey}")
-                    .post("{}".toRequestBody("application/json".toMediaType()))
-                    .build()
+        val sb = supabaseClient ?: return@withContext null
+        val session = sb.sessionManager.getSession()
+        val tokenUrl = "${sb.baseUrl}/functions/v1/pluggy-connect?action=token"
 
-                val resp = httpClient.newCall(req).execute()
-                if (resp.isSuccessful) {
-                    val bodyStr = resp.body?.string() ?: ""
-                    val json = JSONObject(bodyStr)
-                    val token = json.optString("accessToken")
-                    if (token.isNotBlank()) {
-                        Log.d("OpenFinance", "Connect Token gerado com sucesso!")
-                        return@withContext token
-                    }
-                } else {
-                    Log.e("OpenFinance", "Erro ao obter token: ${resp.code} - ${resp.body?.string()}")
-                }
-            } catch (e: Exception) {
-                Log.e("OpenFinance", "Erro ao obter token via Supabase: ${e.message}")
-            }
+        // 1. Tentar com JWT da sessão ativa
+        val token = callTokenEndpoint(tokenUrl, sb.anonKey, session?.accessToken, session?.user?.id)
+        if (!token.isNullOrBlank()) {
+            Log.d("OpenFinance", "Connect Token gerado com sucesso via sessão.")
+            return@withContext token
         }
+
+        // 2. Fallback resiliente com anonKey caso o token de sessão tenha expirado
+        val fallbackToken = callTokenEndpoint(tokenUrl, sb.anonKey, null, session?.user?.id)
+        if (!fallbackToken.isNullOrBlank()) {
+            Log.d("OpenFinance", "Connect Token gerado com sucesso via anonKey fallback.")
+            return@withContext fallbackToken
+        }
+
+        Log.e("OpenFinance", "Falha definitiva ao obter Connect Token da Pluggy.")
         null
+    }
+
+    private fun callTokenEndpoint(url: String, anonKey: String, accessToken: String?, userId: String?): String? {
+        try {
+            val payload = JSONObject().apply {
+                userId?.let { put("userId", it) }
+            }
+            val authHeader = if (!accessToken.isNullOrBlank()) "Bearer $accessToken" else "Bearer $anonKey"
+            val req = Request.Builder()
+                .url(url)
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", authHeader)
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val resp = httpClient.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val bodyStr = resp.body?.string() ?: ""
+                val json = JSONObject(bodyStr)
+                val token = json.optString("accessToken")
+                if (token.isNotBlank()) return token
+            } else {
+                Log.w("OpenFinance", "callTokenEndpoint retornou código HTTP ${resp.code}")
+            }
+        } catch (e: Exception) {
+            Log.e("OpenFinance", "Exceção em callTokenEndpoint: ${e.message}")
+        }
+        return null
     }
 
     /**
@@ -337,117 +148,124 @@ class OpenFinanceRepository(
     suspend fun syncFromPluggy(itemId: String): Int = withContext(Dispatchers.IO) {
         try {
             openFinanceDao.cleanLegacyMockAccounts()
+            openFinanceDao.cleanLegacyMockTransactions()
+            openFinanceDao.cleanLegacyMockBills()
+            expenseDao.cleanLegacyMockExpenses()
         } catch (_: Exception) {}
+
+        val sb = supabaseClient ?: return@withContext 0
+        val session = sb.sessionManager.getSession()
+        val authHeader = if (session != null && session.accessToken.isNotBlank()) {
+            "Bearer ${session.accessToken}"
+        } else {
+            "Bearer ${sb.anonKey}"
+        }
 
         var syncedCount = 0
 
+        // Se itemId == "sync_all", primeiro sincronizar cada item conectado via Edge Function
+        if (itemId == "sync_all") {
+            try {
+                val itemIdsUrl = "${sb.baseUrl}/rest/v1/open_finance_accounts?select=item_id"
+                val itemReq = Request.Builder()
+                    .url(itemIdsUrl)
+                    .addHeader("apikey", sb.anonKey)
+                    .addHeader("Authorization", authHeader)
+                    .get()
+                    .build()
+                val itemResp = httpClient.newCall(itemReq).execute()
+                if (itemResp.isSuccessful) {
+                    val rawItems = itemResp.body?.string() ?: "[]"
+                    val parsedItems = JSONArray(rawItems)
+                    val distinctIds = mutableSetOf<String>()
+                    for (k in 0 until parsedItems.length()) {
+                        val itObj = parsedItems.getJSONObject(k)
+                        val idVal = itObj.optString("item_id")
+                        if (idVal.isNotBlank() && idVal != "null") {
+                            distinctIds.add(idVal)
+                        }
+                    }
+                    for (singleItemId in distinctIds) {
+                        try {
+                            syncSingleItemFromPluggy(sb, authHeader, session?.user?.id, singleItemId)
+                        } catch (itemErr: Exception) {
+                            Log.e("OpenFinance", "Erro ao sincronizar item individual $singleItemId: ${itemErr.message}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("OpenFinance", "Erro ao buscar item_ids para sync_all: ${e.message}")
+            }
+        } else {
+            // Sincroniza o item específico recebido (ex: callback do Pluggy Connect)
+            try {
+                val count = syncSingleItemFromPluggy(sb, authHeader, session?.user?.id, itemId)
+                if (count > 0) syncedCount += count
+            } catch (e: Exception) {
+                Log.e("OpenFinance", "Erro ao sincronizar item $itemId: ${e.message}")
+            }
+        }
+
+        // Buscar todas as contas e transações consolidadas do Supabase REST para popular o Room Local
         var accountsJson: JSONArray? = null
         var billsJson: JSONArray? = null
         var transactionsArray: JSONArray? = null
-        var bankName = "Banco Conectado"
 
-        // 1. Chamar a Supabase Edge Function pluggy-connect com action=sync
-        supabaseClient?.let { sb ->
-            try {
-                val syncUrl = "${sb.baseUrl}/functions/v1/pluggy-connect?action=sync"
-                val payload = JSONObject().apply {
-                    put("action", "sync")
-                    put("itemId", itemId)
-                }
-
-                val req = Request.Builder()
-                    .url(syncUrl)
-                    .addHeader("apikey", sb.anonKey)
-                    .addHeader("Authorization", "Bearer ${sb.anonKey}")
-                    .addHeader("Content-Type", "application/json")
-                    .post(payload.toString().toRequestBody("application/json".toMediaType()))
-                    .build()
-
-                val resp = httpClient.newCall(req).execute()
-                if (resp.isSuccessful) {
-                    val bodyStr = resp.body?.string() ?: ""
-                    val json = JSONObject(bodyStr)
-                    val itemObj = json.optJSONObject("item")
-                    bankName = itemObj?.optJSONObject("connector")?.optString("name") ?: "Open Finance"
-                    accountsJson = json.optJSONArray("accounts")
-                    billsJson = json.optJSONArray("bills")
-                    transactionsArray = json.optJSONArray("transactions")
-                    Log.d("OpenFinance", "Sync Pluggy finalizado: Contas: ${accountsJson?.length()}, Faturas: ${billsJson?.length()}, Transações: ${transactionsArray?.length()}")
-                } else {
-                    Log.e("OpenFinance", "Erro HTTP no sync: ${resp.code} - ${resp.body?.string()}")
-                }
-            } catch (e: Exception) {
-                Log.e("OpenFinance", "Exceção ao sincronizar via Supabase Edge: ${e.message}")
+        try {
+            val restUrl = "${sb.baseUrl}/rest/v1/open_finance_accounts?select=*"
+            val req = Request.Builder()
+                .url(restUrl)
+                .addHeader("apikey", sb.anonKey)
+                .addHeader("Authorization", authHeader)
+                .get()
+                .build()
+            val resp = httpClient.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val raw = resp.body?.string() ?: "[]"
+                val parsed = JSONArray(raw)
+                if (parsed.length() > 0) accountsJson = parsed
             }
+        } catch (e: Exception) {
+            Log.e("OpenFinance", "Erro ao buscar contas do Supabase REST: ${e.message}")
         }
 
-        // 2. Fallback: Se não retornou do Edge Function, buscar do Supabase REST
-        if (supabaseClient != null) {
-            if (accountsJson == null || accountsJson.length() == 0) {
-                try {
-                    val restUrl = "${supabaseClient.baseUrl}/rest/v1/open_finance_accounts?select=*"
-                    val req = Request.Builder()
-                        .url(restUrl)
-                        .addHeader("apikey", supabaseClient.anonKey)
-                        .addHeader("Authorization", "Bearer ${supabaseClient.anonKey}")
-                        .get()
-                        .build()
-                    val resp = httpClient.newCall(req).execute()
-                    if (resp.isSuccessful) {
-                        val raw = resp.body?.string() ?: "[]"
-                        val parsed = JSONArray(raw)
-                        if (parsed.length() > 0) accountsJson = parsed
-                    }
-                } catch (e: Exception) {
-                    Log.e("OpenFinance", "Erro ao buscar contas do Supabase REST: ${e.message}")
-                }
+        try {
+            val billsRestUrl = "${sb.baseUrl}/rest/v1/open_finance_bills?select=*&order=due_date.desc"
+            val req = Request.Builder()
+                .url(billsRestUrl)
+                .addHeader("apikey", sb.anonKey)
+                .addHeader("Authorization", authHeader)
+                .get()
+                .build()
+            val resp = httpClient.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val raw = resp.body?.string() ?: "[]"
+                val parsed = JSONArray(raw)
+                if (parsed.length() > 0) billsJson = parsed
             }
-
-            if (billsJson == null || billsJson.length() == 0) {
-                try {
-                    val billsRestUrl = "${supabaseClient.baseUrl}/rest/v1/open_finance_bills?select=*&order=due_date.desc"
-                    val req = Request.Builder()
-                        .url(billsRestUrl)
-                        .addHeader("apikey", supabaseClient.anonKey)
-                        .addHeader("Authorization", "Bearer ${supabaseClient.anonKey}")
-                        .get()
-                        .build()
-                    val resp = httpClient.newCall(req).execute()
-                    if (resp.isSuccessful) {
-                        val raw = resp.body?.string() ?: "[]"
-                        val parsed = JSONArray(raw)
-                        if (parsed.length() > 0) billsJson = parsed
-                    }
-                } catch (e: Exception) {
-                    Log.e("OpenFinance", "Erro ao buscar faturas do Supabase REST: ${e.message}")
-                }
-            }
-
-            if (transactionsArray == null || transactionsArray.length() == 0) {
-                try {
-                    val txRestUrl = "${supabaseClient.baseUrl}/rest/v1/open_finance_transactions?select=*&order=transaction_date.desc&limit=500"
-                    val req = Request.Builder()
-                        .url(txRestUrl)
-                        .addHeader("apikey", supabaseClient.anonKey)
-                        .addHeader("Authorization", "Bearer ${supabaseClient.anonKey}")
-                        .get()
-                        .build()
-                    val resp = httpClient.newCall(req).execute()
-                    if (resp.isSuccessful) {
-                        val raw = resp.body?.string() ?: "[]"
-                        val parsed = JSONArray(raw)
-                        if (parsed.length() > 0) {
-                            transactionsArray = parsed
-                            Log.d("OpenFinance", "Carregadas ${parsed.length()} transações do Supabase REST")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("OpenFinance", "Erro ao buscar transações do Supabase REST: ${e.message}")
-                }
-            }
+        } catch (e: Exception) {
+            Log.e("OpenFinance", "Erro ao buscar faturas do Supabase REST: ${e.message}")
         }
 
-        // 3. Gravar contas reais com metadados de cartão no Room Local
+        try {
+            val txRestUrl = "${sb.baseUrl}/rest/v1/open_finance_transactions?select=*&order=transaction_date.desc&limit=500"
+            val req = Request.Builder()
+                .url(txRestUrl)
+                .addHeader("apikey", sb.anonKey)
+                .addHeader("Authorization", authHeader)
+                .get()
+                .build()
+            val resp = httpClient.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val raw = resp.body?.string() ?: "[]"
+                val parsed = JSONArray(raw)
+                if (parsed.length() > 0) transactionsArray = parsed
+            }
+        } catch (e: Exception) {
+            Log.e("OpenFinance", "Erro ao buscar transações do Supabase REST: ${e.message}")
+        }
+
+        // 3. Gravar contas reais no Room Local
         if (accountsJson != null && accountsJson.length() > 0) {
             for (i in 0 until accountsJson.length()) {
                 val acc = accountsJson.getJSONObject(i)
@@ -455,7 +273,7 @@ class OpenFinanceRepository(
                 val type = acc.optString("account_type", acc.optString("subtype", acc.optString("type", "Conta Corrente")))
                 val balance = acc.optDouble("current_balance", acc.optDouble("balance", 0.0))
                 val number = acc.optString("account_number", acc.optString("number", "0000"))
-                val name = acc.optString("bank_name", acc.optString("name", bankName))
+                val name = acc.optString("bank_name", acc.optString("name", "Mercado Pago"))
                 val imageUrl = if (acc.has("connector_image_url") && !acc.isNull("connector_image_url")) acc.optString("connector_image_url") else null
                 val creditLimit = if (acc.has("credit_limit") && !acc.isNull("credit_limit")) acc.optDouble("credit_limit") else null
                 val availableCredit = if (acc.has("available_credit_limit") && !acc.isNull("available_credit_limit")) acc.optDouble("available_credit_limit") else null
@@ -510,7 +328,6 @@ class OpenFinanceRepository(
             }
             if (billEntities.isNotEmpty()) {
                 openFinanceDao.insertBills(billEntities)
-                Log.d("OpenFinance", "${billEntities.size} faturas gravadas no SQLite local")
             }
         }
 
@@ -560,10 +377,46 @@ class OpenFinanceRepository(
             }
             if (txEntities.isNotEmpty()) {
                 openFinanceDao.insertTransactions(txEntities)
+                Log.d("OpenFinance", "${txEntities.size} transações reais gravadas no SQLite local")
             }
         }
 
         syncedCount
+    }
+
+    private fun syncSingleItemFromPluggy(
+        sb: SupabaseClient,
+        authHeader: String,
+        userId: String?,
+        itemId: String
+    ): Int {
+        val syncUrl = "${sb.baseUrl}/functions/v1/pluggy-connect?action=sync"
+        val payload = JSONObject().apply {
+            put("action", "sync")
+            put("itemId", itemId)
+            userId?.let { put("userId", it) }
+        }
+
+        val req = Request.Builder()
+            .url(syncUrl)
+            .addHeader("apikey", sb.anonKey)
+            .addHeader("Authorization", authHeader)
+            .addHeader("Content-Type", "application/json")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val resp = httpClient.newCall(req).execute()
+        if (resp.isSuccessful) {
+            val bodyStr = resp.body?.string() ?: ""
+            val json = JSONObject(bodyStr)
+            val txs = json.optJSONArray("transactions")
+            val count = txs?.length() ?: 0
+            Log.d("OpenFinance", "Sync do item $itemId finalizado com sucesso. Transações retornadas: $count")
+            return count
+        } else {
+            Log.e("OpenFinance", "Erro HTTP no sync do item $itemId: ${resp.code}")
+            return 0
+        }
     }
 
     suspend fun connectPredefinedBank(

@@ -25,8 +25,14 @@ interface OpenFinanceDao {
     @Query("DELETE FROM open_finance_accounts WHERE id = :id")
     suspend fun deleteAccountById(id: String)
 
-    @Query("DELETE FROM open_finance_accounts WHERE bankName LIKE '%MeuPluggy%' OR bankName LIKE '%Sandbox%'")
+    @Query("DELETE FROM open_finance_accounts WHERE bankName LIKE '%MeuPluggy%' OR bankName LIKE '%Sandbox%' OR id IN ('mp_card_001', 'mp_checking_001', '206fe49b-93f6-4fae-8e8f-008b14998d3a', '51843f5c-582c-4daf-9d0d-a153028041cb')")
     suspend fun cleanLegacyMockAccounts()
+
+    @Query("DELETE FROM open_finance_transactions WHERE id LIKE 'tx_real_%' OR accountId IN ('mp_card_001', 'mp_checking_001', '206fe49b-93f6-4fae-8e8f-008b14998d3a', '51843f5c-582c-4daf-9d0d-a153028041cb')")
+    suspend fun cleanLegacyMockTransactions()
+
+    @Query("DELETE FROM open_finance_bills WHERE id LIKE 'bill_mp_real_%' OR accountId IN ('mp_card_001', 'mp_checking_001', '206fe49b-93f6-4fae-8e8f-008b14998d3a', '51843f5c-582c-4daf-9d0d-a153028041cb')")
+    suspend fun cleanLegacyMockBills()
 
     // === FATURAS (BILLS) ===
     @Query("SELECT * FROM open_finance_bills ORDER BY dueDate DESC")

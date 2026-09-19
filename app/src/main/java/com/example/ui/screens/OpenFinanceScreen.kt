@@ -79,6 +79,7 @@ fun OpenFinanceScreen(
     // Estados do Pluggy Connect
     var showPluggyWebView by remember { mutableStateOf(false) }
     var activeConnectToken by remember { mutableStateOf<String?>(null) }
+    var selectedConnectorId by remember { mutableStateOf<String?>(null) }
     var isGeneratingToken by remember { mutableStateOf(false) }
     var isSyncingNow by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
@@ -129,8 +130,11 @@ fun OpenFinanceScreen(
     } else 0f
 
     // Iniciar fluxo do Pluggy Connect
+        // Iniciar fluxo do Pluggy Connect
     fun launchPluggyFlow(connectorId: String? = null) {
         isGeneratingToken = true
+        selectedConnectorId = connectorId
+        activeConnectToken = null
         Toast.makeText(context, "Conectando aos servidores do Open Finance...", Toast.LENGTH_SHORT).show()
         onFetchToken { token ->
             isGeneratingToken = false
@@ -1217,7 +1221,22 @@ fun OpenFinanceScreen(
 
     LaunchedEffect(showPluggyWebView, activeConnectToken) {
         if (showPluggyWebView && !activeConnectToken.isNullOrBlank()) {
-            val pluggyUrl = "https://connect.pluggy.ai/?connect_token=$activeConnectToken&connectToken=$activeConnectToken&includeSandbox=false&redirectUrl=finlink://pluggy-callback"
+            val connectorParam = if (!selectedConnectorId.isNullOrBlank()) {
+                val numId = when (selectedConnectorId!!.lowercase()) {
+                    "mercadopago" -> "206"
+                    "nubank" -> "201"
+                    "itau" -> "2"
+                    "bradesco" -> "203"
+                    "bb" -> "1"
+                    "santander" -> "208"
+                    "inter" -> "205"
+                    "c6" -> "207"
+                    "caixa" -> "204"
+                    else -> selectedConnectorId
+                }
+                "&connector_id=$numId&selected_connector_id=$numId&connectorId=$numId"
+            } else ""
+            val pluggyUrl = "https://connect.pluggy.ai/?connect_token=$activeConnectToken&connectToken=$activeConnectToken&includeSandbox=false&with_sandbox=false$connectorParam&redirectUrl=finlink://pluggy-callback"
             try {
                 customTabsIntent.launchUrl(context, Uri.parse(pluggyUrl))
             } catch (e: Exception) {

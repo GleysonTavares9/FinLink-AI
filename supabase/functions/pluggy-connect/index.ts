@@ -136,21 +136,26 @@ serve(async (req) => {
         });
       }
 
-      // Se itemId for "sync_all" ou omitido, sincroniza todos os items reais ativos da Pluggy
+      // Se itemId for "sync_all" ou omitido, sincroniza todos os items reais ativos
       try {
-        const itemsRes = await fetch("https://api.pluggy.ai/items", {
-          headers: { "X-API-KEY": apiKey },
-        });
-        if (itemsRes.ok) {
-          const itemsData = await itemsRes.json();
-          const itemsList = itemsData.results || [];
-          console.log(`[Sync All] Itens encontrados na Pluggy: ${itemsList.length}`);
-          for (const it of itemsList) {
-            await syncPluggyItem(it.id, apiKey, supabase, userId);
+        const { data: dbAccounts } = await supabase
+          .from("open_finance_accounts")
+          .select("item_id");
+        
+        const existingItemIds = Array.from(
+          new Set((dbAccounts || []).map((a: any) => a.item_id).filter(Boolean))
+        );
+
+        console.log(`[Sync All] Itens encontrados no Supabase: ${existingItemIds.length}`);
+        for (const itId of existingItemIds) {
+          try {
+            await syncPluggyItem(itId as string, apiKey, supabase, userId);
+          } catch (itemErr) {
+            console.error(`[Sync All] Erro ao sincronizar item ${itId}:`, itemErr);
           }
         }
       } catch (e) {
-        console.error("[Sync All] Erro ao sincronizar itens da Pluggy:", e);
+        console.error("[Sync All] Erro ao sincronizar itens:", e);
       }
 
       // Retorna os dados gravados no Supabase
@@ -209,9 +214,21 @@ async function syncPluggyItem(itemId: string, apiKey: string, supabase: any, use
   const allTransactions: any[] = [];
 
   for (const acc of rawAccounts) {
+    let finalUserId = userId;
+    if (!finalUserId) {
+      const { data: existingAcc } = await supabase
+        .from("open_finance_accounts")
+        .select("user_id")
+        .eq("id", acc.id)
+        .maybeSingle();
+      if (existingAcc?.user_id) {
+        finalUserId = existingAcc.user_id;
+      }
+    }
+
     const accountPayload = {
       id: acc.id,
-      user_id: userId,
+      user_id: finalUserId,
       item_id: itemId,
       bank_name: (item?.connector?.name?.includes("MeuPluggy") || String(item?.connector?.id) === "200") ? "Mercado Pago" : (item?.connector?.name || acc.name || "Mercado Pago"),
       bank_code: String(item?.connector?.id || "000"),
@@ -274,7 +291,7 @@ async function syncPluggyItem(itemId: string, apiKey: string, supabase: any, use
         }
         return {
           id: tx.id,
-          user_id: userId,
+          user_id: finalUserId,
           account_id: acc.id,
           description: desc,
           amount: Math.abs(rawAmt),
